@@ -71,6 +71,8 @@ import { TourProvider, TourOverlay } from "./tour";
 import { SkillChartPane } from "./skill-chart-pane";
 import { SkillChartDetail } from "./skill-chart-detail";
 import { StaCalcResults } from "./stacalc";
+import { RosterPane, RosterResult } from "./roster-pane";
+import { ParsedRosterHorse, RosterParseResult } from "./roster-parser";
 // import { PasswordGate } from "./PasswordGate";
 import { FeedbackDrawer } from "./feedback-drawer";
 import { SimulationSettings } from "./sim-settings";
@@ -239,7 +241,7 @@ function App() {
 
   // Simulation settings
   const [samples, setSamples] = useState(savedSession.current?.samples ?? 500);
-  const [mode, setMode] = useState<"compare" | "skill" | "stamina">(
+  const [mode, setMode] = useState<"compare" | "skill" | "stamina" | "roster">(
     savedSession.current?.mode ?? "compare",
   );
   const [seed, setSeed] = useState(() =>
@@ -294,6 +296,12 @@ function App() {
   const [results, setResults] = useState<CompareResults | null>(null);
   const [hpcalcResults, setHpcalcResults] = useState<any>(null);
 
+  // Roster mode results
+  const [rosterHorses, setRosterHorses] = useState<ParsedRosterHorse[]>([]);
+  const [rosterResults, setRosterResults] = useState<RosterResult[]>([]);
+  const [rosterSamples, setRosterSamples] = useState(200);
+  const [rosterProgress, setRosterProgress] = useState<{ done: number; total: number } | null>(null);
+
   // Skill chart results
   const [skillChartResults, setSkillChartResults] = useState<Map<string, any>>(
     new Map(),
@@ -324,7 +332,7 @@ function App() {
       type: "module",
     });
     w.addEventListener("message", (e: MessageEvent) => {
-      const { type, results: workerResults } = e.data;
+      const { type, results: workerResults, done, total } = e.data;
       switch (type) {
         case "compare":
           setResults(workerResults);
@@ -337,6 +345,16 @@ function App() {
           break;
         case "hpcalc-complete":
           setIsRunning(false);
+          break;
+        case "roster-progress":
+          setRosterProgress({ done, total });
+          break;
+        case "roster":
+          setRosterResults(workerResults);
+          break;
+        case "roster-complete":
+          setIsRunning(false);
+          setRosterProgress(null);
           break;
       }
     });
@@ -849,6 +867,39 @@ function App() {
           },
         },
       });
+    } else if (mode === "roster") {
+      const course = courseData[courseId];
+      if (!course) {
+        console.error("[V2] Course not found:", courseId);
+        return;
+      }
+      if (rosterHorses.length === 0) {
+        console.warn("[V2] No roster loaded");
+        return;
+      }
+      setIsRunning(true);
+      setRosterResults([]);
+      setRosterProgress({ done: 0, total: rosterHorses.length });
+
+      worker.postMessage({
+        msg: "roster",
+        data: {
+          nsamples: rosterSamples,
+          course,
+          racedef: buildRaceParameters(ground, weather, season, time),
+          umas: rosterHorses.map((h) => convertUmaStateForWorker(h.uma)),
+          options: buildSimulationOptions({
+            seed,
+            syncRng,
+            skillWisdomCheck,
+            rushedKakari,
+            leadCompetition,
+            competeFight,
+            duelingRates: competeFight ? duelingRates : undefined,
+            laneMovement,
+          }),
+        },
+      });
     } else {
       // Skill chart mode
       handleRunSkillChart();
@@ -874,7 +925,28 @@ function App() {
     laneMovement,
     autoSeed,
     handleRunSkillChart,
+    rosterHorses,
+    rosterSamples,
   ]);
+
+  // Roster mode: parse uploaded export, and load a horse into Uma 1 for deep-dive
+  const handleRosterParsed = useCallback((parsed: RosterParseResult) => {
+    setRosterHorses(parsed.horses);
+    setRosterResults([]);
+    setRosterProgress(null);
+  }, []);
+
+  const handleSelectRosterHorse = useCallback((uma: UmaState) => {
+    setUma1(uma);
+    setActiveUmaTab(1);
+    setMode("compare");
+  }, []);
+
+  // Course surface (1=Turf, 2=Dirt) for roster aptitude selection
+  const courseSurface = useMemo(() => {
+    const c = (courseData as any)[courseId];
+    return (c?.surface === 2 ? 2 : 1) as 1 | 2;
+  }, [courseId]);
 
   // Get current snapshot based on displayRun selection
   const currentSnapshot = useMemo(() => {
@@ -1301,13 +1373,21 @@ function App() {
                     <Heart size={14} />
                     Stamina
                   </button>
+                  <button
+                    type="button"
+                    class={mode === "roster" ? "active" : ""}
+                    onClick={() => setMode("roster")}
+                  >
+                    <Users size={14} />
+                    Roster
+                  </button>
                 </div>
                 <Button
                   variant="primary"
                   className="v2-run-btn"
                   icon={<Play size={14} />}
                   onClick={handleRunSimulation}
-                  disabled={isRunning}
+                  disabled={isRunning || (mode === "roster" && rosterHorses.length === 0)}
                 >
                   {isRunning ? "Running..." : "RUN"}
                 </Button>
@@ -1753,6 +1833,19 @@ function App() {
                       </div>
                     )}
                   </div>
+                ) : mode === "roster" ? (
+                  /* RESULTS - Roster ranking mode */
+                  <RosterPane
+                    horses={rosterHorses}
+                    results={rosterResults}
+                    courseSurface={courseSurface}
+                    isRunning={isRunning}
+                    progress={rosterProgress}
+                    samples={rosterSamples}
+                    setSamples={setRosterSamples}
+                    onRosterParsed={handleRosterParsed}
+                    onSelectHorse={handleSelectRosterHorse}
+                  />
                 ) : mode === "stamina" ? (
                   /* RESULTS - Stamina calculator mode */
                   <div class="v2-results-pane">
@@ -2196,6 +2289,14 @@ function App() {
                         >
                           <Heart size={14} />
                           Stamina
+                        </button>
+                        <button
+                          type="button"
+                          class={mode === "roster" ? "active" : ""}
+                          onClick={() => setMode("roster")}
+                        >
+                          <Users size={14} />
+                          Roster
                         </button>
                       </div>
                     </div>

@@ -7,6 +7,7 @@ import { fromJS, Map as ImmMap } from 'immutable';
 import { HorseState } from '../../components/HorseDefTypes';
 import { runComparison } from '../../umalator/compare';
 import { runHpCalc } from '../../umalator/hpcalc';
+import { runRoster } from '../roster';
 
 /**
  * Merge skill activation maps from two result sets
@@ -258,6 +259,41 @@ function runHpCalcWorker({ nsamples, course, racedef, uma, pacer, options }: {
 }
 
 /**
+ * Run roster ranking simulation.
+ * Simulates every horse on the configured course and reports per-horse
+ * finish-time stats (mean / median / min / max / std). Streams progress so the
+ * UI can show a progress bar over what may be a multi-minute run.
+ */
+function runRosterWorker({ nsamples, course, racedef, umas, options }: {
+	nsamples: number;
+	course: any;
+	racedef: any;
+	umas: any[];
+	options: any;
+}) {
+	const startTime = performance.now();
+
+	const horses = umas.map(convertToHorseState);
+
+	const results = runRoster(
+		nsamples,
+		course,
+		racedef,
+		horses,
+		options,
+		(done, total) => {
+			self.postMessage({ type: 'roster-progress', done, total });
+		}
+	);
+
+	self.postMessage({ type: 'roster', results });
+	self.postMessage({ type: 'roster-complete' });
+
+	const elapsed = performance.now() - startTime;
+	console.log(`[V2 RaceSimulator] Roster: ${horses.length} horses x ${nsamples} samples in ${elapsed.toFixed(0)}ms`);
+}
+
+/**
  * Message handler
  */
 self.addEventListener('message', function(e: MessageEvent) {
@@ -274,6 +310,10 @@ self.addEventListener('message', function(e: MessageEvent) {
 
 		case 'hpcalc':
 			runHpCalcWorker(data);
+			break;
+
+		case 'roster':
+			runRosterWorker(data);
 			break;
 
 		case 'chart-cancel':

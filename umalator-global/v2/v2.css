@@ -7653,3 +7653,262 @@ tr:hover .v2-skill-hide-btn {
 	color: var(--color-text-faint);
 	line-height: 1.35;
 }
+
+/* ============================================================
+   Roster ranking mode
+   ============================================================ */
+
+.v2-roster-pane {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-md);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	padding: var(--space-md);
+}
+
+/* Controls bar: upload button, sample count, sort toggle */
+.v2-roster-controls {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--space-md);
+}
+
+.v2-roster-samples {
+	display: flex;
+	align-items: center;
+	gap: var(--space-xs);
+	font-size: var(--font-sm);
+	color: var(--color-text-muted);
+}
+
+.v2-roster-samples input {
+	width: 70px;
+	padding: var(--space-xs) var(--space-sm);
+	background: var(--color-surface-elevated);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	color: var(--color-text);
+	font-family: "JetBrains Mono", monospace;
+	font-size: var(--font-sm);
+}
+
+.v2-roster-sort {
+	display: flex;
+	align-items: center;
+	gap: var(--space-xs);
+	margin-left: auto;
+	font-size: var(--font-sm);
+	color: var(--color-text-muted);
+}
+
+.v2-roster-sort button {
+	padding: var(--space-xs) var(--space-sm);
+	background: var(--color-surface-elevated);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	color: var(--color-text-secondary);
+	font-size: var(--font-sm);
+	cursor: pointer;
+	transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.v2-roster-sort button:hover {
+	background: var(--color-surface-hover);
+}
+
+.v2-roster-sort button.active {
+	background: var(--color-primary-glow);
+	border-color: var(--color-primary);
+	color: var(--color-primary-text);
+}
+
+/* Progress bar during a run */
+.v2-roster-progress {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	font-size: var(--font-sm);
+	color: var(--color-text-secondary);
+}
+
+.v2-roster-progress-bar {
+	flex: 1;
+	height: 6px;
+	background: var(--color-surface-elevated);
+	border-radius: 9999px;
+	overflow: hidden;
+}
+
+.v2-roster-progress-fill {
+	height: 100%;
+	background: var(--color-primary);
+	border-radius: 9999px;
+	transition: width 0.2s ease;
+}
+
+/* Empty state */
+.v2-roster-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--space-sm);
+	min-height: 150px;
+	justify-content: center;
+	text-align: center;
+	color: var(--color-text-muted);
+}
+
+.v2-roster-empty-hint {
+	font-size: var(--font-sm);
+	color: var(--color-text-faint);
+	max-width: 36ch;
+}
+
+/* Ranked results table */
+.v2-roster-table-wrap {
+	overflow-x: auto;
+}
+
+.v2-roster-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--font-sm);
+}
+
+.v2-roster-table thead th {
+	position: sticky;
+	top: 0;
+	background: var(--color-surface-elevated);
+	color: var(--color-text-muted);
+	text-align: left;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	font-size: var(--font-xs);
+	font-weight: 600;
+	padding: var(--space-sm);
+	border-bottom: 1px solid var(--color-border);
+}
+
+.v2-roster-table th.v2-roster-num,
+.v2-roster-table td.v2-roster-num {
+	text-align: right;
+	font-family: "JetBrains Mono", monospace;
+	white-space: nowrap;
+}
+
+.v2-roster-table th.v2-roster-rank,
+.v2-roster-table td.v2-roster-rank {
+	width: 2.5em;
+	text-align: right;
+	color: var(--color-text-muted);
+	font-family: "JetBrains Mono", monospace;
+}
+
+.v2-roster-row {
+	cursor: pointer;
+	transition: background 0.12s;
+}
+
+.v2-roster-row:hover {
+	background: var(--color-surface-hover);
+}
+
+.v2-roster-row td {
+	padding: var(--space-sm);
+	border-bottom: 1px solid var(--color-border-subtle);
+	vertical-align: middle;
+}
+
+.v2-roster-table td.v2-roster-name {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+}
+
+.v2-roster-icon {
+	width: 32px;
+	height: 32px;
+	border-radius: var(--radius-sm);
+	object-fit: cover;
+	flex-shrink: 0;
+	background: var(--color-surface-elevated);
+}
+
+.v2-roster-mean {
+	color: var(--color-primary-text);
+	font-weight: 600;
+}
+
+/* Upload modal */
+.v2-roster-upload {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-md);
+}
+
+.v2-roster-upload-desc {
+	margin: 0;
+	font-size: var(--font-sm);
+	color: var(--color-text-secondary);
+	line-height: 1.4;
+}
+
+.v2-roster-upload-file {
+	display: flex;
+}
+
+.v2-roster-file-label {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	padding: var(--space-sm) var(--space-md);
+	background: var(--color-surface-elevated);
+	border: 1px dashed var(--color-border-strong);
+	border-radius: var(--radius-md);
+	color: var(--color-text-secondary);
+	cursor: pointer;
+	width: 100%;
+	transition: background 0.15s, border-color 0.15s;
+}
+
+.v2-roster-file-label:hover {
+	background: var(--color-surface-hover);
+	border-color: var(--color-primary);
+}
+
+.v2-roster-file-label input[type="file"] {
+	display: none;
+}
+
+.v2-roster-upload-or {
+	text-align: center;
+	font-size: var(--font-xs);
+	color: var(--color-text-faint);
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+}
+
+.v2-roster-upload-opts {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-sm);
+}
+
+.v2-roster-upload-error {
+	padding: var(--space-sm);
+	background: var(--color-primary-glow);
+	border: 1px solid var(--color-error);
+	border-radius: var(--radius-sm);
+	color: var(--color-error);
+	font-size: var(--font-sm);
+}
+
+.v2-roster-upload-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--space-sm);
+	margin-top: var(--space-md);
+}

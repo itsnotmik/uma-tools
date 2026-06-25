@@ -72,7 +72,7 @@ import { SkillChartPane } from "./skill-chart-pane";
 import { SkillChartDetail } from "./skill-chart-detail";
 import { StaCalcResults } from "./stacalc";
 import { RosterPane, RosterResult } from "./roster-pane";
-import { ParsedRosterHorse, RosterParseResult } from "./roster-parser";
+import { ParsedRosterHorse, RosterParseResult, resolveCourseAptitudes } from "./roster-parser";
 // import { PasswordGate } from "./PasswordGate";
 import { FeedbackDrawer } from "./feedback-drawer";
 import { SimulationSettings } from "./sim-settings";
@@ -887,7 +887,14 @@ function App() {
           nsamples: rosterSamples,
           course,
           racedef: buildRaceParameters(ground, weather, season, time),
-          umas: rosterHorses.map((h) => convertUmaStateForWorker(h.uma)),
+          umas: rosterHorses.map((h) => {
+            const { distanceAptitude, surfaceAptitude } = resolveCourseAptitudes(
+              h,
+              (course as any).distanceType,
+              (course as any).surface,
+            );
+            return convertUmaStateForWorker({ ...h.uma, distanceAptitude, surfaceAptitude });
+          }),
           options: buildSimulationOptions({
             seed,
             syncRng,
@@ -951,6 +958,12 @@ function App() {
   const courseSurface = useMemo(() => {
     const c = (courseData as any)[courseId];
     return (c?.surface === 2 ? 2 : 1) as 1 | 2;
+  }, [courseId]);
+
+  // Course distanceType (1=Sprint, 2=Mile, 3=Mid, 4=Long) for roster distance aptitude
+  const courseDistanceType = useMemo(() => {
+    const c = (courseData as any)[courseId];
+    return (c?.distanceType ?? 3) as number;
   }, [courseId]);
 
   // Get current snapshot based on displayRun selection
@@ -1844,6 +1857,7 @@ function App() {
                     horses={rosterHorses}
                     results={rosterResults}
                     courseSurface={courseSurface}
+                    courseDistanceType={courseDistanceType}
                     isRunning={isRunning}
                     progress={rosterProgress}
                     samples={rosterSamples}

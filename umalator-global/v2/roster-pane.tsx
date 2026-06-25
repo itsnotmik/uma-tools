@@ -19,6 +19,7 @@ import type { UmaState } from './uma-panel';
 import { getSkillName, getSkillIcon, getSkillRarityClass } from './skills';
 import {
 	parseRoster,
+	resolveCourseAptitudes,
 	type ParsedRosterHorse,
 	type RosterParseResult,
 } from './roster-parser';
@@ -40,6 +41,8 @@ interface RosterPaneProps {
 	results: RosterResult[];
 	/** Course surface of the currently-selected course (1=Turf, 2=Dirt) — re-parses aptitudes on upload. */
 	courseSurface: 1 | 2;
+	/** Course distanceType (1=Sprint, 2=Mile, 3=Mid, 4=Long) — selects course-matched distance aptitude for display/load. */
+	courseDistanceType: number;
 	/** Whether a run is in progress. */
 	isRunning: boolean;
 	/** Progress {done,total} during a run, or null. */
@@ -75,15 +78,21 @@ const STRATEGY_LABEL: Record<string, string> = {
 	Oonige: 'Front (Oo)',
 };
 
+// Per game mechanics: DisplayedTime = ActualTime * 1.18 (matches compare mode).
+// Duplicated inline intentionally (no shared helper) per project decision.
 function fmtTime(t: number): string {
 	if (!isFinite(t)) return '—';
-	return t.toFixed(3) + 's';
+	const displayed = t * 1.18;
+	const minutes = Math.floor(displayed / 60);
+	const remainingSeconds = displayed % 60;
+	return `${minutes}:${remainingSeconds.toFixed(3).padStart(6, '0')}`;
 }
 
 export function RosterPane({
 	horses,
 	results,
 	courseSurface,
+	courseDistanceType,
 	isRunning,
 	progress,
 	samples,
@@ -101,6 +110,13 @@ export function RosterPane({
 	const [detail, setDetail] = useState<
 		{ horse: ParsedRosterHorse; result: RosterResult | null; rank: number } | null
 	>(null);
+
+	// Load a horse into compare with its distance/surface aptitude resolved against the
+	// currently-configured course (mirrors the sim-dispatch resolution in app-v2).
+	const loadHorse = useCallback((horse: ParsedRosterHorse, slot: 1 | 2) => {
+		const { distanceAptitude, surfaceAptitude } = resolveCourseAptitudes(horse, courseDistanceType, courseSurface);
+		onSelectHorse({ ...horse.uma, distanceAptitude, surfaceAptitude }, slot);
+	}, [onSelectHorse, courseDistanceType, courseSurface]);
 
 	const doParse = useCallback((text: string) => {
 		setParseError(null);
@@ -255,20 +271,20 @@ export function RosterPane({
 									<td class="v2-roster-num v2-roster-mean">{result ? fmtTime(result.meanTime) : '—'}</td>
 									<td class="v2-roster-num">{result ? fmtTime(result.medianTime) : '—'}</td>
 									<td class="v2-roster-num">{result ? fmtTime(result.minTime) : '—'}</td>
-									<td class="v2-roster-num">{result ? result.stdTime.toFixed(3) : '—'}</td>
+									<td class="v2-roster-num">{result ? (result.stdTime * 1.18).toFixed(3) : '—'}</td>
 									<td class="v2-roster-load-col">
 										<div class="v2-roster-load-btns">
 											<button
 												type="button"
 												class="v2-roster-load-btn"
 												title="Load into Uma 1"
-												onClick={(e) => { e.stopPropagation(); onSelectHorse(horse.uma, 1); }}
+												onClick={(e) => { e.stopPropagation(); loadHorse(horse, 1); }}
 											>→1</button>
 											<button
 												type="button"
 												class="v2-roster-load-btn"
 												title="Load into Uma 2"
-												onClick={(e) => { e.stopPropagation(); onSelectHorse(horse.uma, 2); }}
+												onClick={(e) => { e.stopPropagation(); loadHorse(horse, 2); }}
 											>→2</button>
 										</div>
 									</td>
@@ -346,13 +362,13 @@ export function RosterPane({
 					<div class="v2-roster-detail-actions">
 						<Button
 							variant="secondary"
-							onClick={() => { onSelectHorse(detail.horse.uma, 1); setDetail(null); }}
+							onClick={() => { loadHorse(detail.horse, 1); setDetail(null); }}
 						>
 							Load into Uma 1
 						</Button>
 						<Button
 							variant="secondary"
-							onClick={() => { onSelectHorse(detail.horse.uma, 2); setDetail(null); }}
+							onClick={() => { loadHorse(detail.horse, 2); setDetail(null); }}
 						>
 							Load into Uma 2
 						</Button>
@@ -362,6 +378,9 @@ export function RosterPane({
 				{detail && (() => {
 					const { horse, result, rank } = detail;
 					const u = horse.uma;
+					// Distance/surface aptitude shown for the currently-configured course
+					// (not the parse-time max()), matching what the sim actually uses.
+					const { distanceAptitude, surfaceAptitude } = resolveCourseAptitudes(horse, courseDistanceType, courseSurface);
 					return (
 						<div class="v2-roster-detail">
 							{/* Header: icon, epithet/grade, rank + key metrics */}
@@ -392,7 +411,7 @@ export function RosterPane({
 										<div class="v2-roster-metric"><span>Median</span><b>{fmtTime(result.medianTime)}</b></div>
 										<div class="v2-roster-metric"><span>Best</span><b>{fmtTime(result.minTime)}</b></div>
 										<div class="v2-roster-metric"><span>Worst</span><b>{fmtTime(result.maxTime)}</b></div>
-										<div class="v2-roster-metric"><span>±σ</span><b>{result.stdTime.toFixed(3)}</b></div>
+										<div class="v2-roster-metric"><span>±σ</span><b>{(result.stdTime * 1.18).toFixed(3)}</b></div>
 									</div>
 								</div>
 							)}
@@ -416,11 +435,11 @@ export function RosterPane({
 								<div class="v2-roster-detail-apts">
 									<div class="v2-roster-apt">
 										<span>Distance</span>
-										<b class={aptClass(u.distanceAptitude)}>{u.distanceAptitude}</b>
+										<b class={aptClass(distanceAptitude)}>{distanceAptitude}</b>
 									</div>
 									<div class="v2-roster-apt">
 										<span>Surface</span>
-										<b class={aptClass(u.surfaceAptitude)}>{u.surfaceAptitude}</b>
+										<b class={aptClass(surfaceAptitude)}>{surfaceAptitude}</b>
 									</div>
 									<div class="v2-roster-apt">
 										<span>Strategy</span>

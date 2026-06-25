@@ -84,6 +84,10 @@ export interface ParsedRosterHorse {
 	useType: number;
 	/** The equipped unique skill id (empty if none), so the UI can label its level. */
 	uniqueSkillId: string;
+	/** Raw distance aptitude grades (game 1-8) for course-matched resolution. */
+	rawDistanceGrades: { short?: number; mile?: number; middle?: number; long?: number };
+	/** Raw ground aptitude grades (game 1-8) for surface resolution. */
+	rawGroundGrades: { turf?: number; dirt?: number };
 }
 
 export interface RosterParseOptions {
@@ -105,6 +109,31 @@ export interface RosterParseResult {
 
 function clampAptitude(v: number | undefined): UmaState['distanceAptitude'] {
 	return APT_MAP[v as number] ?? 'A';
+}
+
+/**
+ * Resolve a horse's distance + surface aptitude for a SPECIFIC course, using the
+ * course's distanceType (1=Sprint, 2=Mile, 3=Mid, 4=Long) and surface (1=Turf, 2=Dirt).
+ *
+ * The parser stores raw 1-8 grades for every distance/ground so the correct aptitude
+ * can be picked against whatever course is configured at sim time (no re-parse needed).
+ * clampAptitude(undefined) -> 'A', so a missing grade degrades exactly as the old
+ * parse-time default did.
+ */
+export function resolveCourseAptitudes(
+	horse: ParsedRosterHorse,
+	distanceType: number,
+	surface: number,
+): { distanceAptitude: UmaState['distanceAptitude']; surfaceAptitude: UmaState['surfaceAptitude'] } {
+	const d = horse.rawDistanceGrades;
+	const distByType: Record<number, number | undefined> = { 1: d.short, 2: d.mile, 3: d.middle, 4: d.long };
+	const distGrade = distByType[distanceType]
+		?? Math.max(d.short ?? 1, d.mile ?? 1, d.middle ?? 1, d.long ?? 1);
+	const g = horse.rawGroundGrades;
+	return {
+		distanceAptitude: clampAptitude(distGrade),
+		surfaceAptitude: clampAptitude(surface === 2 ? g.dirt : g.turf),
+	};
 }
 
 /**
@@ -205,6 +234,16 @@ export function parseRosterEntry(
 		charaGrade: entry.chara_grade ?? 0,
 		useType: entry.use_type ?? 0,
 		uniqueSkillId,
+		rawDistanceGrades: {
+			short: entry.proper_distance_short,
+			mile: entry.proper_distance_mile,
+			middle: entry.proper_distance_middle,
+			long: entry.proper_distance_long,
+		},
+		rawGroundGrades: {
+			turf: entry.proper_ground_turf,
+			dirt: entry.proper_ground_dirt,
+		},
 	};
 }
 

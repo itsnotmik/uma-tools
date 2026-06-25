@@ -16,7 +16,7 @@ import { Upload } from 'lucide-react';
 
 import { Modal, Button, Textarea, Switch } from './components';
 import type { UmaState } from './uma-panel';
-import { STAT_ICONS, statRankIconUrl, aptitudeRankIconUrl } from './uma-panel';
+import { STAT_ICONS, statRankIconUrl, aptitudeRankIconUrl, CollapsibleSection } from './uma-panel';
 import { getSkillName, getSkillIcon, getSkillRarityClass } from './skills';
 import { computeSkillSp } from './skill-chart-utils';
 import {
@@ -373,7 +373,7 @@ export function RosterPane({
 				isOpen={detail != null}
 				onClose={() => setDetail(null)}
 				title={detail?.horse.name}
-				size="md"
+				size="lg"
 				footer={detail && (
 					<div class="v2-roster-detail-actions">
 						<Button
@@ -435,8 +435,7 @@ export function RosterPane({
 								</div>
 							)}
 
-							<div class="v2-roster-detail-card">
-								<div class="v2-roster-detail-section-header">Stats</div>
+							<CollapsibleSection title="Stats" defaultOpen={true}>
 								<div class="v2-stats-grid">
 									{STAT_ICONS.map(s => (
 										<div class="v2-stat-input" key={s.key}>
@@ -451,10 +450,9 @@ export function RosterPane({
 										</div>
 									))}
 								</div>
-							</div>
+							</CollapsibleSection>
 
-							<div class="v2-roster-detail-card">
-								<div class="v2-roster-detail-section-header">Aptitudes</div>
+							<CollapsibleSection title="Aptitudes" defaultOpen={true}>
 								<div class="v2-aptitudes-grid v2-roster-detail-apts-grid">
 									{aptTiles.map(at => (
 										<div class="v2-aptitude-row" key={at.label}>
@@ -467,10 +465,9 @@ export function RosterPane({
 									<span class="v2-strategy-label">Style</span>
 									<div class="v2-roster-detail-style-value">{STRATEGY_FULL[u.strategy] ?? u.strategy}</div>
 								</div>
-							</div>
+							</CollapsibleSection>
 
-							<div class="v2-roster-detail-card">
-								<div class="v2-roster-detail-section-header">Skills <span class="v2-roster-detail-badge">{u.skills.length} · {skillSp.toLocaleString()} SP</span></div>
+							<CollapsibleSection title="Skills" defaultOpen={true} badge={`${u.skills.length} · ${skillSp.toLocaleString()} SP`}>
 								{u.skills.length === 0 ? (
 									<div class="v2-roster-detail-empty">No skills equipped.</div>
 								) : (
@@ -492,7 +489,7 @@ export function RosterPane({
 										})}
 									</ul>
 								)}
-							</div>
+							</CollapsibleSection>
 						</div>
 					);
 				})()}

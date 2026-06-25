@@ -8043,16 +8043,49 @@ tr:hover .v2-skill-hide-btn {
 
 /* Read-only stat value (replaces the panel's <input>) */
 .v2-stat-readonly {
-	min-width: 56px;
-	padding: 4px 6px;
+	min-width: 0;
+	width: 100%;
+	padding: 4px 4px;
 	background: var(--color-surface-overlay);
 	border: 1px solid var(--color-border-subtle);
 	border-radius: var(--radius-xs);
-	font-size: var(--font-md);
+	font-size: var(--font-sm);
 	font-weight: 600;
 	color: var(--color-text);
 	text-align: center;
 	font-family: "JetBrains Mono", monospace;
+}
+
+/* ---- Modal sizing: make the 5-stat grid fit and never overflow horizontally ---- */
+.v2-uma-panel-modal {
+	min-width: 0;
+}
+
+.v2-uma-panel-modal .v2-stats-grid {
+	gap: var(--space-2xs, 4px);
+}
+
+/* Let tiles shrink below content width so 5 fit the modal width */
+.v2-uma-panel-modal .v2-stat-input,
+.v2-uma-panel-modal .v2-aptitude-row {
+	min-width: 0;
+	padding: var(--space-2xs, 4px);
+}
+
+.v2-uma-panel-modal .v2-stat-value {
+	width: 100%;
+	min-width: 0;
+	gap: 2px;
+}
+
+/* Rank/type icons must not force the tile wider than its track */
+.v2-uma-panel-modal .v2-stat-rank-icon,
+.v2-uma-panel-modal .v2-stat-type-icon {
+	flex-shrink: 0;
+}
+
+.v2-uma-panel-modal .v2-stat-label {
+	white-space: nowrap;
 }
 
 .v2-aptitude-rank-icon {

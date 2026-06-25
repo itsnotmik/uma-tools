@@ -50,6 +50,44 @@ export const skillGroups = Object.keys(skilldata).sort((a, b) =>
 }, new Map<string, string[]>());
 
 /**
+ * Total SP cost of an equipped skill list, mirroring in-game pricing: buying a
+ * gold ◎ also charges for the prerequisite ○/× in the same group (the chain cost
+ * up to the highest-selected skill). Used by the uma panel badge and the roster table.
+ */
+export function computeSkillSp(skills: string[]): number {
+	const meta = skillmeta as Record<string, { baseCost?: number; groupId?: string }>;
+	const selectedByGroup = new Map<string, Set<string>>();
+	let total = 0;
+	for (const id of skills) {
+		const m = meta[id];
+		if (!m) continue;
+		const gid = m.groupId;
+		if (!gid) {
+			total += m.baseCost ?? 0;
+			continue;
+		}
+		if (!selectedByGroup.has(gid)) selectedByGroup.set(gid, new Set());
+		selectedByGroup.get(gid)!.add(id);
+	}
+	for (const [gid, selectedInGroup] of selectedByGroup) {
+		const sorted = skillGroups.get(gid);
+		if (!sorted) {
+			for (const id of selectedInGroup) total += meta[id]?.baseCost ?? 0;
+			continue;
+		}
+		let maxPos = -1;
+		for (let i = 0; i < sorted.length; i++) {
+			if (selectedInGroup.has(sorted[i])) maxPos = i;
+		}
+		if (maxPos < 0) continue;
+		for (let i = 0; i <= maxPos; i++) {
+			total += meta[sorted[i]]?.baseCost ?? 0;
+		}
+	}
+	return total;
+}
+
+/**
  * Scale base SP cost by hint level
  * Hint levels 1-3: 10% reduction per level
  * Hint levels 4-5: 30% + 5% per level above 3

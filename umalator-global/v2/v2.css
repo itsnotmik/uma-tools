@@ -7828,6 +7828,20 @@ tr:hover .v2-skill-hide-btn {
 	gap: var(--space-sm);
 }
 
+/* Keep the Style column tight against the horse name instead of letting the
+   name column stretch and open a gap. */
+.v2-roster-table th.v2-roster-name,
+.v2-roster-table td.v2-roster-name {
+	width: 1%;
+	white-space: nowrap;
+}
+
+.v2-roster-table th.v2-roster-style,
+.v2-roster-table td.v2-roster-style {
+	white-space: nowrap;
+	padding-left: var(--space-sm);
+}
+
 .v2-roster-icon {
 	width: 32px;
 	height: 32px;

@@ -17,6 +17,7 @@ import { Upload } from 'lucide-react';
 import { Modal, Button, Textarea, Switch } from './components';
 import type { UmaState } from './uma-panel';
 import { getSkillName, getSkillIcon, getSkillRarityClass } from './skills';
+import { computeSkillSp } from './skill-chart-utils';
 import {
 	parseRoster,
 	resolveCourseAptitudes,
@@ -31,6 +32,7 @@ export interface RosterResult {
 	minTime: number;
 	maxTime: number;
 	stdTime: number;
+	fullSpurtRate: number;
 	sampleCount: number;
 }
 
@@ -240,16 +242,24 @@ export function RosterPane({
 							<tr>
 								<th class="v2-roster-rank">#</th>
 								<th class="v2-roster-name">Horse</th>
-								<th>Style</th>
+								<th class="v2-roster-style">Style</th>
+								<th class="v2-roster-num" title="Distance aptitude for the configured course">Dist</th>
 								<th class="v2-roster-num">Mean</th>
 								<th class="v2-roster-num">Median</th>
 								<th class="v2-roster-num">Best</th>
 								<th class="v2-roster-num">±σ</th>
+								<th class="v2-roster-num" title="Percentage of runs with a full last spurt">Spurt</th>
+								<th class="v2-roster-num" title="Equipped skills">Skills</th>
+								<th class="v2-roster-num" title="Total SP cost of equipped skills">SP</th>
 								<th class="v2-roster-load-col">Load</th>
 							</tr>
 						</thead>
 						<tbody>
-							{ranked.map(({ horse, result }, i) => (
+							{ranked.map(({ horse, result }, i) => {
+								const distApt = resolveCourseAptitudes(horse, courseDistanceType, courseSurface).distanceAptitude;
+								const skillCount = horse.uma.skills.length;
+								const sp = computeSkillSp(horse.uma.skills);
+								return (
 								<tr
 									key={horse.trainedCharaId || i}
 									class="v2-roster-row"
@@ -267,11 +277,15 @@ export function RosterPane({
 										/>
 										<span>{horse.name}</span>
 									</td>
-									<td>{STRATEGY_LABEL[horse.uma.strategy] ?? horse.uma.strategy}</td>
+									<td class="v2-roster-style">{STRATEGY_LABEL[horse.uma.strategy] ?? horse.uma.strategy}</td>
+									<td class="v2-roster-num"><b class={aptClass(distApt)}>{distApt}</b></td>
 									<td class="v2-roster-num v2-roster-mean">{result ? fmtTime(result.meanTime) : '—'}</td>
 									<td class="v2-roster-num">{result ? fmtTime(result.medianTime) : '—'}</td>
 									<td class="v2-roster-num">{result ? fmtTime(result.minTime) : '—'}</td>
 									<td class="v2-roster-num">{result ? (result.stdTime * 1.18).toFixed(3) : '—'}</td>
+									<td class="v2-roster-num">{result ? result.fullSpurtRate.toFixed(0) + '%' : '—'}</td>
+									<td class="v2-roster-num">{skillCount}</td>
+									<td class="v2-roster-num">{sp.toLocaleString()}</td>
 									<td class="v2-roster-load-col">
 										<div class="v2-roster-load-btns">
 											<button
@@ -289,7 +303,8 @@ export function RosterPane({
 										</div>
 									</td>
 								</tr>
-							))}
+								);
+							})}
 						</tbody>
 					</table>
 				</div>

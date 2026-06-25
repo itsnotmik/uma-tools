@@ -51,6 +51,8 @@ export interface RosterHorseResult {
 	maxTime: number;
 	/** Standard deviation of finish times (spread / consistency). */
 	stdTime: number;
+	/** Percentage of samples that achieved a full last spurt (matches compare's fullSpurtRate). */
+	fullSpurtRate: number;
 	sampleCount: number;
 }
 
@@ -124,13 +126,14 @@ function simulateHorse(
 	racedef: RaceParameters,
 	uma: HorseState,
 	options: RosterRunOptions,
-): { meanTime: number; medianTime: number; minTime: number; maxTime: number; stdTime: number; sampleCount: number } {
+): { meanTime: number; medianTime: number; minTime: number; maxTime: number; stdTime: number; fullSpurtRate: number; sampleCount: number } {
 	const { builder, pacerHorse } = buildHorse(nsamples, course, racedef, uma, options);
 	const gen = builder.build();
 	const pacemakerCount = options.pacemakerCount ?? 1;
 	const basePacerRng = new Rule30CARng(options.seed + 1);
 
 	const times: number[] = [];
+	let fullSpurtCount = 0;
 
 	for (let i = 0; i < nsamples; ++i) {
 		const pacers: (RaceSolver | null)[] = [];
@@ -160,6 +163,10 @@ function simulateHorse(
 			}
 			s.step(1 / 15);
 		}
+		// Read full-spurt before cleanup (set during the race in updateLastSpurtState),
+		// mirroring compare.ts's fullSpurtRate.
+		if (s.fullSpurt) fullSpurtCount++;
+
 		s.cleanup();
 
 		times.push(s.accumulatetime.t);
@@ -178,6 +185,7 @@ function simulateHorse(
 		minTime: times[0],
 		maxTime: times[n - 1],
 		stdTime: Math.sqrt(variance),
+		fullSpurtRate: n > 0 ? (fullSpurtCount / n) * 100 : 0,
 		sampleCount: n,
 	};
 }

@@ -283,7 +283,7 @@ export function RosterPane({
 									<td class="v2-roster-num">{result ? fmtTime(result.medianTime) : '—'}</td>
 									<td class="v2-roster-num">{result ? fmtTime(result.minTime) : '—'}</td>
 									<td class="v2-roster-num">{result ? (result.stdTime * 1.18).toFixed(3) : '—'}</td>
-									<td class="v2-roster-num">{result ? result.fullSpurtRate.toFixed(0) + '%' : '—'}</td>
+									<td class="v2-roster-num">{result != null && result.fullSpurtRate != null ? result.fullSpurtRate.toFixed(0) + '%' : '—'}</td>
 									<td class="v2-roster-num">{skillCount}</td>
 									<td class="v2-roster-num">{sp.toLocaleString()}</td>
 									<td class="v2-roster-load-col">

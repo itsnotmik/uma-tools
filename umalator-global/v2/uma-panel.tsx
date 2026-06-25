@@ -115,7 +115,7 @@ export const defaultUmaState: UmaState = {
 // STAT RANK CALCULATION
 // ============================================
 
-function rankForStat(x: number): number {
+export function rankForStat(x: number): number {
 	if (x > 1200) {
 		return Math.min(18 + Math.floor((x - 1200) / 100) * 10 + Math.floor(x / 10) % 10, 97);
 	} else if (x >= 1150) {
@@ -127,6 +127,29 @@ function rankForStat(x: number): number {
 	} else {
 		return Math.floor(x / 50);
 	}
+}
+
+// Stat tiles, in display order, with their type-icon paths (shared by the uma panel
+// and the read-only roster detail modal so the two stay visually identical).
+export const STAT_ICONS: { key: 'speed' | 'stamina' | 'power' | 'guts' | 'wisdom'; label: string; icon: string }[] = [
+	{ key: 'speed', label: 'Spd', icon: '/uma-tools/icons/status_00.png' },
+	{ key: 'stamina', label: 'Sta', icon: '/uma-tools/icons/status_01.png' },
+	{ key: 'power', label: 'Pow', icon: '/uma-tools/icons/status_02.png' },
+	{ key: 'guts', label: 'Gut', icon: '/uma-tools/icons/status_03.png' },
+	{ key: 'wisdom', label: 'Wit', icon: '/uma-tools/icons/status_04.png' },
+];
+
+/** Rank icon (S/A/… colored badge) for a numeric stat value — mirrors StatInput. */
+export function statRankIconUrl(value: number): string {
+	const rank = rankForStat(value);
+	return `/uma-tools/icons/statusrank/ui_statusrank_${(100 + rank).toString().slice(1)}.png`;
+}
+
+/** Rank icon for an aptitude grade (S..G) — mirrors the panel's APTITUDE_OPTIONS. */
+export function aptitudeRankIconUrl(grade: string): string {
+	const order: string[] = ['S', 'A', 'B', 'C', 'D', 'E', 'F', 'G'];
+	const idx = 7 - order.indexOf(grade);
+	return `/uma-tools/icons/utx_ico_statusrank_${(100 + idx).toString().slice(1)}.png`;
 }
 
 // ============================================
@@ -301,8 +324,7 @@ interface StatInputProps {
 
 export function StatInput({ label, icon, value, onChange }: StatInputProps) {
 	const [draft, setDraft] = useState<string | null>(null);
-	const rank = rankForStat(value);
-	const rankIcon = `/uma-tools/icons/statusrank/ui_statusrank_${(100 + rank).toString().slice(1)}.png`;
+	const rankIcon = statRankIconUrl(value);
 
 	return (
 		<div class="v2-stat-input">
@@ -341,17 +363,9 @@ interface StatsGridProps {
 }
 
 export function StatsGrid({ state, onChange }: StatsGridProps) {
-	const stats = [
-		{ key: 'speed', label: 'Spd', icon: '/uma-tools/icons/status_00.png' },
-		{ key: 'stamina', label: 'Sta', icon: '/uma-tools/icons/status_01.png' },
-		{ key: 'power', label: 'Pow', icon: '/uma-tools/icons/status_02.png' },
-		{ key: 'guts', label: 'Gut', icon: '/uma-tools/icons/status_03.png' },
-		{ key: 'wisdom', label: 'Wit', icon: '/uma-tools/icons/status_04.png' },
-	] as const;
-
 	return (
 		<div class="v2-stats-grid">
-			{stats.map(s => (
+			{STAT_ICONS.map(s => (
 				<StatInput
 					key={s.key}
 					label={s.label}

@@ -8001,6 +8001,85 @@ tr:hover .v2-skill-hide-btn {
 	color: var(--color-primary-text);
 }
 
+/* ---- Panel-style modal (mirrors the uma config side panel) ---- */
+.v2-roster-detail-name {
+	font-size: var(--font-lg);
+	font-weight: 700;
+	color: var(--color-text);
+	line-height: 1.2;
+}
+
+/* Bordered card matching the config panel's stat/aptitude sections */
+.v2-roster-detail-card {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-sm);
+	padding: var(--space-sm) var(--space-md);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border-subtle);
+	border-radius: var(--radius-md);
+}
+
+.v2-roster-detail-section-header {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	font-size: var(--font-xs);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--color-text-muted);
+	font-weight: 600;
+}
+
+.v2-roster-detail-badge {
+	margin-left: auto;
+	text-transform: none;
+	letter-spacing: 0;
+	font-size: var(--font-xs);
+	font-weight: 600;
+	color: var(--color-text-secondary);
+	font-family: "JetBrains Mono", monospace;
+}
+
+/* Read-only stat value (replaces the panel's <input>) */
+.v2-stat-readonly {
+	min-width: 56px;
+	padding: 4px 6px;
+	background: var(--color-surface-overlay);
+	border: 1px solid var(--color-border-subtle);
+	border-radius: var(--radius-xs);
+	font-size: var(--font-md);
+	font-weight: 600;
+	color: var(--color-text);
+	text-align: center;
+	font-family: "JetBrains Mono", monospace;
+}
+
+.v2-aptitude-rank-icon {
+	width: 22px;
+	height: 22px;
+}
+
+.v2-roster-detail-apts-grid {
+	grid-template-columns: repeat(3, 1fr);
+}
+
+.v2-roster-detail-style-row {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+}
+
+.v2-roster-detail-style-value {
+	flex: 1;
+	padding: var(--space-xs) var(--space-sm);
+	background: var(--color-surface-overlay);
+	border: 1px solid var(--color-border-subtle);
+	border-radius: var(--radius-sm);
+	font-size: var(--font-sm);
+	color: var(--color-text);
+}
+
 .v2-roster-detail-section {
 	display: flex;
 	flex-direction: column;

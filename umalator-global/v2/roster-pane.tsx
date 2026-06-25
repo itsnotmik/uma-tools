@@ -16,6 +16,7 @@ import { Upload } from 'lucide-react';
 
 import { Modal, Button, Textarea, Switch } from './components';
 import type { UmaState } from './uma-panel';
+import { STAT_ICONS, statRankIconUrl, aptitudeRankIconUrl } from './uma-panel';
 import { getSkillName, getSkillIcon, getSkillRarityClass } from './skills';
 import { computeSkillSp } from './skill-chart-utils';
 import {
@@ -58,15 +59,6 @@ interface RosterPaneProps {
 	onSelectHorse: (uma: UmaState, slot: 1 | 2) => void;
 }
 
-/** Stat keys shown in the detail modal, in display order. */
-const STAT_FIELDS: { key: keyof UmaState; label: string }[] = [
-	{ key: 'speed', label: 'Speed' },
-	{ key: 'stamina', label: 'Stamina' },
-	{ key: 'power', label: 'Power' },
-	{ key: 'guts', label: 'Guts' },
-	{ key: 'wisdom', label: 'Wit' },
-];
-
 /** Aptitude grade -> CSS modifier class (for color coding S..G). */
 function aptClass(grade: string): string {
 	return 'v2-roster-apt-' + grade.toLowerCase();
@@ -78,6 +70,15 @@ const STRATEGY_LABEL: Record<string, string> = {
 	Sasi: 'Late',
 	Oikomi: 'End',
 	Oonige: 'Front (Oo)',
+};
+
+// Full strategy names (matches the uma config panel's Style row).
+const STRATEGY_FULL: Record<string, string> = {
+	Oonige: 'Runaway',
+	Nige: 'Front Runner',
+	Senkou: 'Pace Chaser',
+	Sasi: 'Late Surger',
+	Oikomi: 'End Closer',
 };
 
 // Per game mechanics: DisplayedTime = ActualTime * 1.18 (matches compare mode).
@@ -396,10 +397,15 @@ export function RosterPane({
 					// Distance/surface aptitude shown for the currently-configured course
 					// (not the parse-time max()), matching what the sim actually uses.
 					const { distanceAptitude, surfaceAptitude } = resolveCourseAptitudes(horse, courseDistanceType, courseSurface);
+					const skillSp = computeSkillSp(u.skills);
+					const aptTiles = [
+						{ label: 'Surface', grade: surfaceAptitude },
+						{ label: 'Distance', grade: distanceAptitude },
+						{ label: 'Style', grade: u.strategyAptitude },
+					];
 					return (
-						<div class="v2-roster-detail">
-							{/* Header: icon, epithet/grade, rank + key metrics */}
-							<div class="v2-roster-detail-head">
+						<div class="v2-roster-detail v2-uma-panel-modal">
+							<div class="v2-roster-detail-card v2-roster-detail-head">
 								<img
 									class="v2-roster-detail-icon"
 									src={horse.iconUrl}
@@ -407,65 +413,64 @@ export function RosterPane({
 									onError={(e) => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }}
 								/>
 								<div class="v2-roster-detail-head-info">
+									<div class="v2-roster-detail-name">{horse.name}</div>
 									<div class="v2-roster-detail-sub">
-										{'★'.repeat(u.starCount)} · {STRATEGY_LABEL[u.strategy] ?? u.strategy}
-									</div>
-									<div class="v2-roster-detail-rank">
-										{result ? `Rank #${rank}` : 'No result'}
+										{'★'.repeat(u.starCount)} · {result ? `Rank #${rank}` : 'No result'}
 										{result && <span class="v2-roster-detail-mean"> · {fmtTime(result.meanTime)} mean</span>}
 									</div>
 								</div>
 							</div>
 
-							{/* Timing metrics */}
 							{result && (
-								<div class="v2-roster-detail-section">
-									<div class="v2-roster-detail-label">Race metrics ({result.sampleCount} samples)</div>
+								<div class="v2-roster-detail-card">
+									<div class="v2-roster-detail-section-header">Race Metrics <span class="v2-roster-detail-badge">{result.sampleCount} samples</span></div>
 									<div class="v2-roster-detail-metrics">
 										<div class="v2-roster-metric"><span>Mean</span><b>{fmtTime(result.meanTime)}</b></div>
 										<div class="v2-roster-metric"><span>Median</span><b>{fmtTime(result.medianTime)}</b></div>
 										<div class="v2-roster-metric"><span>Best</span><b>{fmtTime(result.minTime)}</b></div>
 										<div class="v2-roster-metric"><span>Worst</span><b>{fmtTime(result.maxTime)}</b></div>
 										<div class="v2-roster-metric"><span>±σ</span><b>{(result.stdTime * 1.18).toFixed(3)}</b></div>
+										<div class="v2-roster-metric"><span>Spurt</span><b>{result.fullSpurtRate != null ? result.fullSpurtRate.toFixed(0) + '%' : '—'}</b></div>
 									</div>
 								</div>
 							)}
 
-							{/* Stats */}
-							<div class="v2-roster-detail-section">
-								<div class="v2-roster-detail-label">Stats</div>
-								<div class="v2-roster-detail-stats">
-									{STAT_FIELDS.map(({ key, label }) => (
-										<div class="v2-roster-stat" key={key}>
-											<span>{label}</span>
-											<b>{u[key] as number}</b>
+							<div class="v2-roster-detail-card">
+								<div class="v2-roster-detail-section-header">Stats</div>
+								<div class="v2-stats-grid">
+									{STAT_ICONS.map(s => (
+										<div class="v2-stat-input" key={s.key}>
+											<div class="v2-stat-header">
+												<img src={s.icon} alt={s.label} class="v2-stat-type-icon" />
+												<span class="v2-stat-label">{s.label}</span>
+											</div>
+											<div class="v2-stat-value">
+												<img src={statRankIconUrl(u[s.key] as number)} alt="" class="v2-stat-rank-icon" />
+												<span class="v2-stat-readonly">{u[s.key] as number}</span>
+											</div>
 										</div>
 									))}
 								</div>
 							</div>
 
-							{/* Aptitude grades */}
-							<div class="v2-roster-detail-section">
-								<div class="v2-roster-detail-label">Aptitudes</div>
-								<div class="v2-roster-detail-apts">
-									<div class="v2-roster-apt">
-										<span>Distance</span>
-										<b class={aptClass(distanceAptitude)}>{distanceAptitude}</b>
-									</div>
-									<div class="v2-roster-apt">
-										<span>Surface</span>
-										<b class={aptClass(surfaceAptitude)}>{surfaceAptitude}</b>
-									</div>
-									<div class="v2-roster-apt">
-										<span>Strategy</span>
-										<b class={aptClass(u.strategyAptitude)}>{u.strategyAptitude}</b>
-									</div>
+							<div class="v2-roster-detail-card">
+								<div class="v2-roster-detail-section-header">Aptitudes</div>
+								<div class="v2-aptitudes-grid v2-roster-detail-apts-grid">
+									{aptTiles.map(at => (
+										<div class="v2-aptitude-row" key={at.label}>
+											<span class="v2-aptitude-label">{at.label}</span>
+											<img src={aptitudeRankIconUrl(at.grade)} alt={at.grade} class="v2-aptitude-rank-icon" />
+										</div>
+									))}
+								</div>
+								<div class="v2-strategy-row v2-roster-detail-style-row">
+									<span class="v2-strategy-label">Style</span>
+									<div class="v2-roster-detail-style-value">{STRATEGY_FULL[u.strategy] ?? u.strategy}</div>
 								</div>
 							</div>
 
-							{/* Skills */}
-							<div class="v2-roster-detail-section">
-								<div class="v2-roster-detail-label">Skills ({u.skills.length})</div>
+							<div class="v2-roster-detail-card">
+								<div class="v2-roster-detail-section-header">Skills <span class="v2-roster-detail-badge">{u.skills.length} · {skillSp.toLocaleString()} SP</span></div>
 								{u.skills.length === 0 ? (
 									<div class="v2-roster-detail-empty">No skills equipped.</div>
 								) : (

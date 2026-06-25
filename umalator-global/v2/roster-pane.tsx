@@ -16,6 +16,7 @@ import { Upload } from 'lucide-react';
 
 import { Modal, Button, Textarea, Switch } from './components';
 import type { UmaState } from './uma-panel';
+import { getSkillName, getSkillIcon, getSkillRarityClass } from './skills';
 import {
 	parseRoster,
 	type ParsedRosterHorse,
@@ -48,8 +49,22 @@ interface RosterPaneProps {
 	setSamples: (n: number) => void;
 	/** Called with the freshly-parsed roster when the user uploads/pastes. */
 	onRosterParsed: (parsed: RosterParseResult) => void;
-	/** Load a horse into Uma 1 and switch to compare mode. */
-	onSelectHorse: (uma: UmaState) => void;
+	/** Load a horse into Uma 1 or Uma 2 and switch to compare mode. */
+	onSelectHorse: (uma: UmaState, slot: 1 | 2) => void;
+}
+
+/** Stat keys shown in the detail modal, in display order. */
+const STAT_FIELDS: { key: keyof UmaState; label: string }[] = [
+	{ key: 'speed', label: 'Speed' },
+	{ key: 'stamina', label: 'Stamina' },
+	{ key: 'power', label: 'Power' },
+	{ key: 'guts', label: 'Guts' },
+	{ key: 'wisdom', label: 'Wit' },
+];
+
+/** Aptitude grade -> CSS modifier class (for color coding S..G). */
+function aptClass(grade: string): string {
+	return 'v2-roster-apt-' + grade.toLowerCase();
 }
 
 const STRATEGY_LABEL: Record<string, string> = {
@@ -82,6 +97,10 @@ export function RosterPane({
 	const [includeRentals, setIncludeRentals] = useState(false);
 	const [includeStubs, setIncludeStubs] = useState(false);
 	const [sortKey, setSortKey] = useState<'mean' | 'median'>('mean');
+	// The horse whose detail modal is open, joined with its rank + result, or null.
+	const [detail, setDetail] = useState<
+		{ horse: ParsedRosterHorse; result: RosterResult | null; rank: number } | null
+	>(null);
 
 	const doParse = useCallback((text: string) => {
 		setParseError(null);
@@ -210,6 +229,7 @@ export function RosterPane({
 								<th class="v2-roster-num">Median</th>
 								<th class="v2-roster-num">Best</th>
 								<th class="v2-roster-num">±σ</th>
+								<th class="v2-roster-load-col">Load</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -217,8 +237,8 @@ export function RosterPane({
 								<tr
 									key={horse.trainedCharaId || i}
 									class="v2-roster-row"
-									onClick={() => onSelectHorse(horse.uma)}
-									title="Load into Uma 1 for detailed comparison"
+									onClick={() => setDetail({ horse, result, rank: i + 1 })}
+									title="View stats, skills & metrics"
 								>
 									<td class="v2-roster-rank">{result ? i + 1 : '—'}</td>
 									<td class="v2-roster-name">
@@ -236,6 +256,22 @@ export function RosterPane({
 									<td class="v2-roster-num">{result ? fmtTime(result.medianTime) : '—'}</td>
 									<td class="v2-roster-num">{result ? fmtTime(result.minTime) : '—'}</td>
 									<td class="v2-roster-num">{result ? result.stdTime.toFixed(3) : '—'}</td>
+									<td class="v2-roster-load-col">
+										<div class="v2-roster-load-btns">
+											<button
+												type="button"
+												class="v2-roster-load-btn"
+												title="Load into Uma 1"
+												onClick={(e) => { e.stopPropagation(); onSelectHorse(horse.uma, 1); }}
+											>→1</button>
+											<button
+												type="button"
+												class="v2-roster-load-btn"
+												title="Load into Uma 2"
+												onClick={(e) => { e.stopPropagation(); onSelectHorse(horse.uma, 2); }}
+											>→2</button>
+										</div>
+									</td>
 								</tr>
 							))}
 						</tbody>
@@ -299,6 +335,128 @@ export function RosterPane({
 						Load roster
 					</Button>
 				</div>
+			</Modal>
+
+			<Modal
+				isOpen={detail != null}
+				onClose={() => setDetail(null)}
+				title={detail?.horse.name}
+				size="md"
+				footer={detail && (
+					<div class="v2-roster-detail-actions">
+						<Button
+							variant="secondary"
+							onClick={() => { onSelectHorse(detail.horse.uma, 1); setDetail(null); }}
+						>
+							Load into Uma 1
+						</Button>
+						<Button
+							variant="secondary"
+							onClick={() => { onSelectHorse(detail.horse.uma, 2); setDetail(null); }}
+						>
+							Load into Uma 2
+						</Button>
+					</div>
+				)}
+			>
+				{detail && (() => {
+					const { horse, result, rank } = detail;
+					const u = horse.uma;
+					return (
+						<div class="v2-roster-detail">
+							{/* Header: icon, epithet/grade, rank + key metrics */}
+							<div class="v2-roster-detail-head">
+								<img
+									class="v2-roster-detail-icon"
+									src={horse.iconUrl}
+									alt=""
+									onError={(e) => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }}
+								/>
+								<div class="v2-roster-detail-head-info">
+									<div class="v2-roster-detail-sub">
+										{'★'.repeat(u.starCount)} · {STRATEGY_LABEL[u.strategy] ?? u.strategy}
+									</div>
+									<div class="v2-roster-detail-rank">
+										{result ? `Rank #${rank}` : 'No result'}
+										{result && <span class="v2-roster-detail-mean"> · {fmtTime(result.meanTime)} mean</span>}
+									</div>
+								</div>
+							</div>
+
+							{/* Timing metrics */}
+							{result && (
+								<div class="v2-roster-detail-section">
+									<div class="v2-roster-detail-label">Race metrics ({result.sampleCount} samples)</div>
+									<div class="v2-roster-detail-metrics">
+										<div class="v2-roster-metric"><span>Mean</span><b>{fmtTime(result.meanTime)}</b></div>
+										<div class="v2-roster-metric"><span>Median</span><b>{fmtTime(result.medianTime)}</b></div>
+										<div class="v2-roster-metric"><span>Best</span><b>{fmtTime(result.minTime)}</b></div>
+										<div class="v2-roster-metric"><span>Worst</span><b>{fmtTime(result.maxTime)}</b></div>
+										<div class="v2-roster-metric"><span>±σ</span><b>{result.stdTime.toFixed(3)}</b></div>
+									</div>
+								</div>
+							)}
+
+							{/* Stats */}
+							<div class="v2-roster-detail-section">
+								<div class="v2-roster-detail-label">Stats</div>
+								<div class="v2-roster-detail-stats">
+									{STAT_FIELDS.map(({ key, label }) => (
+										<div class="v2-roster-stat" key={key}>
+											<span>{label}</span>
+											<b>{u[key] as number}</b>
+										</div>
+									))}
+								</div>
+							</div>
+
+							{/* Aptitude grades */}
+							<div class="v2-roster-detail-section">
+								<div class="v2-roster-detail-label">Aptitudes</div>
+								<div class="v2-roster-detail-apts">
+									<div class="v2-roster-apt">
+										<span>Distance</span>
+										<b class={aptClass(u.distanceAptitude)}>{u.distanceAptitude}</b>
+									</div>
+									<div class="v2-roster-apt">
+										<span>Surface</span>
+										<b class={aptClass(u.surfaceAptitude)}>{u.surfaceAptitude}</b>
+									</div>
+									<div class="v2-roster-apt">
+										<span>Strategy</span>
+										<b class={aptClass(u.strategyAptitude)}>{u.strategyAptitude}</b>
+									</div>
+								</div>
+							</div>
+
+							{/* Skills */}
+							<div class="v2-roster-detail-section">
+								<div class="v2-roster-detail-label">Skills ({u.skills.length})</div>
+								{u.skills.length === 0 ? (
+									<div class="v2-roster-detail-empty">No skills equipped.</div>
+								) : (
+									<ul class="v2-roster-detail-skills">
+										{u.skills.map((id) => {
+											const isUnique = id === horse.uniqueSkillId;
+											return (
+												<li class="v2-roster-skill" key={id}>
+													<img
+														class={'v2-roster-skill-icon ' + getSkillRarityClass(id)}
+														src={getSkillIcon(id)}
+														alt=""
+														onError={(e) => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }}
+													/>
+													<span class="v2-roster-skill-name">{getSkillName(id)}</span>
+													{isUnique && <span class="v2-roster-skill-lv">Lv{u.uniqueLv}</span>}
+												</li>
+											);
+										})}
+									</ul>
+								)}
+							</div>
+						</div>
+					);
+				})()}
 			</Modal>
 		</div>
 	);

@@ -936,9 +936,14 @@ function App() {
     setRosterProgress(null);
   }, []);
 
-  const handleSelectRosterHorse = useCallback((uma: UmaState) => {
-    setUma1(uma);
-    setActiveUmaTab(1);
+  const handleSelectRosterHorse = useCallback((uma: UmaState, slot: 1 | 2 = 1) => {
+    if (slot === 2) {
+      setUma2(uma);
+      setActiveUmaTab(2);
+    } else {
+      setUma1(uma);
+      setActiveUmaTab(1);
+    }
     setMode("compare");
   }, []);
 

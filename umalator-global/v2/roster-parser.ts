@@ -82,6 +82,8 @@ export interface ParsedRosterHorse {
 	rank: number;
 	charaGrade: number;
 	useType: number;
+	/** The equipped unique skill id (empty if none), so the UI can label its level. */
+	uniqueSkillId: string;
 }
 
 export interface RosterParseOptions {
@@ -154,13 +156,15 @@ export function parseRosterEntry(
 	// downstream throw on unknown IDs). Track the unique skill's level.
 	const expectedUniqueId = uniqueSkillForUma(outfitId, starCount);
 	let uniqueLv = 1;
+	let uniqueSkillId = '';
 	const skills: string[] = [];
 	for (const s of entry.skill_array) {
 		const id = String(s.skill_id);
 		if (!(id in skillMetaTable)) continue;
 		skills.push(id);
-		if (id === expectedUniqueId && typeof s.level === 'number' && s.level > 1) {
-			uniqueLv = s.level;
+		if (id === expectedUniqueId) {
+			uniqueSkillId = id;
+			if (typeof s.level === 'number' && s.level > 1) uniqueLv = s.level;
 		}
 	}
 
@@ -200,6 +204,7 @@ export function parseRosterEntry(
 		rank: entry.rank ?? 0,
 		charaGrade: entry.chara_grade ?? 0,
 		useType: entry.use_type ?? 0,
+		uniqueSkillId,
 	};
 }
 

@@ -1880,8 +1880,12 @@ body {
   }
 }
 
-/* 1600px and below - header wraps to two rows */
-@media (max-width: 1600px) {
+/* 1800px and below - header wraps to two rows.
+   The single-row layout (left ~560px + center ~620px + right ~540px + gaps)
+   needs ~1800px; below that the three groups overlap, so wrap the conditions
+   onto their own row. Kept above 1600px so it also fires at ~90% zoom, where
+   the viewport reports a wider CSS width than the content actually fits in. */
+@media (max-width: 1800px) {
   .v2-header {
     flex-wrap: wrap;
     height: auto;

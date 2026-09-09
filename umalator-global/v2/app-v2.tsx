@@ -231,6 +231,8 @@ function App() {
 
   // Preferences (persisted separately)
   const [darkMode, setDarkMode] = useState(savedPrefs.current.darkMode);
+  // Glassmorphic surfaces. Orthogonal to darkMode: composes with both modes and all 6 accents.
+  const [glassMode, setGlassMode] = useState(savedPrefs.current.glassMode);
   const [colorPalette, setColorPalette] = useState<ColorPalette>(
     savedPrefs.current.colorPalette,
   );
@@ -477,8 +479,8 @@ function App() {
 
   // Save preferences immediately
   useEffect(() => {
-    savePreferences({ darkMode, colorPalette, uiScale });
-  }, [darkMode, colorPalette, uiScale]);
+    savePreferences({ darkMode, glassMode, colorPalette, uiScale });
+  }, [darkMode, glassMode, colorPalette, uiScale]);
 
   useEffect(() => {
 	localStorage.setItem('umalator_v2_hideNotInGame', String(hideNotInGame));
@@ -1232,7 +1234,7 @@ function App() {
         <IntlProvider definition={STRINGS}>
           <div
             id="app-v2"
-            class={`${darkMode ? "" : "light"} ${CC_DEV && yandereMode ? "yandere" : (colorPalette !== 'uma-green' ? colorPalette : '')} ${showNotification ? "v2-has-notification" : ""}`}
+            class={`${darkMode ? "" : "light"} ${glassMode ? "glass" : ""} ${CC_DEV && yandereMode ? "yandere" : (colorPalette !== 'uma-green' ? colorPalette : '')} ${showNotification ? "v2-has-notification" : ""}`}
             style={{ "--ui-scale": uiScale / 100 } as any}
           >
             {showNotification && (
@@ -1370,6 +1372,19 @@ function App() {
                             }}
                           >
                             Light
+                          </button>
+                          {/* Glass is a separate axis, not a third mode: it layers on top of
+                              whichever of Dark/Light is active, and on any accent. */}
+                          <button
+                            type="button"
+                            class={`v2-theme-btn v2-theme-btn-glass ${glassMode ? 'active' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setGlassMode(!glassMode);
+                            }}
+                            title="Glassmorphic surfaces (works with Dark or Light)"
+                          >
+                            Glass
                           </button>
                         </div>
                       ),
@@ -2314,6 +2329,17 @@ function App() {
                             type="checkbox"
                             checked={darkMode}
                             onChange={() => setDarkMode(!darkMode)}
+                          />
+                          <span class="v2-switch-slider" />
+                        </label>
+                      </div>
+                      <div class="v2-mobile-settings-row">
+                        <label>Glass</label>
+                        <label class="v2-switch">
+                          <input
+                            type="checkbox"
+                            checked={glassMode}
+                            onChange={() => setGlassMode(!glassMode)}
                           />
                           <span class="v2-switch-slider" />
                         </label>

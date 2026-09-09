@@ -7709,3 +7709,158 @@ tr:hover .v2-skill-hide-btn {
 	background: var(--v2-card-bg-hover, rgba(255, 255, 255, 0.08));
 	outline: none;
 }
+
+/* ============================================================
+   GLASS THEME
+   ------------------------------------------------------------
+   A separate axis, not a third mode: `.glass` layers on top of
+   whichever of Dark/Light is active, and composes with all six
+   accent palettes. Everything below is token overrides so the
+   ~165 surface and ~111 border usages pick it up for free.
+
+   The backdrop is an accent-tinted mesh derived from
+   --color-primary-glow, so switching accent also reskins the
+   blur behind the panels.
+   ============================================================ */
+
+#app-v2.glass {
+  /* Translucent surfaces. Alpha climbs with elevation so stacked
+     panels stay distinguishable once blurred. */
+  --color-surface: rgba(255, 255, 255, 0.045);
+  --color-surface-elevated: rgba(255, 255, 255, 0.07);
+  --color-surface-overlay: rgba(20, 24, 34, 0.72);
+  --color-surface-hover: rgba(255, 255, 255, 0.09);
+
+  /* Brighter hairlines: a 0.08 border disappears against a blurred backdrop. */
+  --color-border: rgba(255, 255, 255, 0.14);
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.22);
+
+  /* Deeper, softer shadows to separate panes that no longer have solid fills. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  --glass-blur: 16px;
+  --glass-blur-strong: 28px;
+
+  /* Lift the base a little: at #08090c there is nothing for translucent panels to
+     reveal, and the theme reads as plain dark. */
+  --color-bg: #0d1119;
+  /* bg-subtle backs several inset panels (sim settings, sections). Opaque here would
+     punch solid holes through the glass, so it gets the same translucent treatment. */
+  --color-bg-subtle: rgba(255, 255, 255, 0.028);
+
+  /* Mesh driven from --color-primary via color-mix so intensity is controlled here
+     rather than inherited from the much fainter --color-primary-glow. Each accent
+     reskins the backdrop for free. */
+  /* Each accent rule (#app-v2.sage-green etc.) paints an opaque background here. The
+     mesh lives on a z-index:-1 pseudo-element, which renders BEHIND its own parent's
+     background, so that background has to be cleared or it hides the mesh entirely.
+     Equal specificity to the accent rules, and later in the file, so this wins. */
+  background: none;
+
+  --glass-mesh:
+    radial-gradient(ellipse 75% 60% at 8% -12%,
+      color-mix(in srgb, var(--color-primary) 55%, transparent) 0%, transparent 68%),
+    radial-gradient(ellipse 65% 55% at 92% 4%,
+      color-mix(in srgb, var(--color-accent) 32%, transparent) 0%, transparent 62%),
+    radial-gradient(ellipse 95% 65% at 45% 108%,
+      color-mix(in srgb, var(--color-primary) 42%, transparent) 0%, transparent 68%);
+}
+
+/* #app-v2 is a zero-width flex container, so a background set on it paints nothing.
+   Render the mesh as a viewport-fixed layer behind the content instead. */
+#app-v2.glass::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--glass-mesh), var(--color-bg);
+}
+
+/* Light + glass: same structure, inverted alphas. */
+#app-v2.glass.light {
+  --color-surface: rgba(255, 255, 255, 0.55);
+  --color-surface-elevated: rgba(255, 255, 255, 0.72);
+  --color-surface-overlay: rgba(255, 255, 255, 0.88);
+  --color-surface-hover: rgba(255, 255, 255, 0.85);
+
+  --color-border: rgba(0, 0, 0, 0.10);
+  --color-border-subtle: rgba(0, 0, 0, 0.06);
+  --color-border-strong: rgba(0, 0, 0, 0.16);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 8px 24px rgba(31, 41, 55, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --shadow-lg: 0 16px 48px rgba(31, 41, 55, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  --color-bg: #eef1f7;
+  --color-bg-subtle: rgba(255, 255, 255, 0.45);
+  --glass-mesh:
+    radial-gradient(ellipse 75% 60% at 8% -12%,
+      color-mix(in srgb, var(--color-primary) 20%, transparent) 0%, transparent 62%),
+    radial-gradient(ellipse 65% 55% at 92% 4%,
+      color-mix(in srgb, var(--color-accent) 14%, transparent) 0%, transparent 58%),
+    radial-gradient(ellipse 95% 65% at 45% 108%,
+      color-mix(in srgb, var(--color-primary) 16%, transparent) 0%, transparent 62%);
+}
+
+/* Blur the panels. Scoped to the containers that actually read a surface token
+   rather than blanket-applied: backdrop-filter forces a new stacking context and
+   is the expensive part of this theme. */
+#app-v2.glass .v2-header,
+#app-v2.glass .v2-track-container,
+#app-v2.glass .v2-results-pane,
+#app-v2.glass .v2-uma-stats-card,
+#app-v2.glass .v2-sim-settings,
+#app-v2.glass .v2-dropdown-menu,
+#app-v2.glass .v2-tooltip,
+#app-v2.glass .v2-folder-card,
+#app-v2.glass .v2-password-card,
+#app-v2.glass .v2-dueling-rates-popover,
+#app-v2.glass .v2-skill-popover-stats,
+#app-v2.glass .v2-mobile-nav {
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+}
+
+#app-v2.glass .v2-modal,
+#app-v2.glass .v2-drawer {
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(150%);
+}
+
+/* The Glass button in the settings dropdown sits beside Dark/Light but toggles
+   independently, so it gets a divider rather than reading as a third choice. */
+.v2-theme-btn-glass {
+  position: relative;
+}
+.v2-theme-btn-glass::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 20%;
+  height: 60%;
+  width: 1px;
+  background: var(--color-border-strong);
+}
+
+/* Respect reduced-transparency and reduced-motion users: drop the blur (the
+   expensive, motion-adjacent part) and fall back to solid surfaces. */
+@media (prefers-reduced-transparency: reduce) {
+  #app-v2.glass [class*="v2-"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  #app-v2.glass {
+    --color-surface: #12151c;
+    --color-surface-elevated: #181c26;
+    --color-surface-overlay: #1e2330;
+  }
+  #app-v2.glass.light {
+    --color-surface: #ffffff;
+    --color-surface-elevated: #ffffff;
+    --color-surface-overlay: #ffffff;
+  }
+}

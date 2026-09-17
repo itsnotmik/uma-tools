@@ -560,6 +560,8 @@ export const COLOR_PALETTES: ColorPalette[] = ['uma-green', 'sage-green', 'vibra
  */
 export interface Preferences {
 	darkMode: boolean;
+	/** Glassmorphic surfaces. Orthogonal to darkMode -- composes with both modes and every accent. */
+	glassMode: boolean;
 	colorPalette: ColorPalette;
 	notificationDismissed: string; // ID of the last dismissed notification, or '' if none
 	tourCompleted: boolean;
@@ -568,6 +570,7 @@ export interface Preferences {
 
 const DEFAULT_PREFERENCES: Preferences = {
 	darkMode: true,
+	glassMode: false,
 	colorPalette: 'sage-green',
 	notificationDismissed: '',
 	tourCompleted: false,
@@ -610,6 +613,7 @@ export function loadPreferences(): Preferences {
 
 		return {
 			darkMode: typeof json.darkMode === 'boolean' ? json.darkMode : DEFAULT_PREFERENCES.darkMode,
+			glassMode: typeof json.glassMode === 'boolean' ? json.glassMode : DEFAULT_PREFERENCES.glassMode,
 			colorPalette,
 			notificationDismissed: typeof json.notificationDismissed === 'string' ? json.notificationDismissed : DEFAULT_PREFERENCES.notificationDismissed,
 			tourCompleted: typeof json.tourCompleted === 'boolean' ? json.tourCompleted : DEFAULT_PREFERENCES.tourCompleted,

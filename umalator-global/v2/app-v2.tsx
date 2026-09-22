@@ -59,12 +59,14 @@ import {
   Book,
   Calendar,
   Heart,
+  LayoutGrid,
 } from "lucide-react";
 import { V2TrackSelect } from "./track-select";
 import { CompactConditions } from "./conditions";
-import { presets, DEFAULT_PRESET } from "./presets";
+import { presets, visiblePresets, DEFAULT_PRESET } from "./presets";
 import { V2UmaPanel, UmaState, defaultUmaState } from "./uma-panel";
 import { TraineesTab } from "./trainees-tab";
+import { UmasTab, UmasTabState, initialUmasTabState } from "./roster/umas-tab";
 import { V2ResultsPane, CompareResults, RaceSnapshot } from "./results-pane";
 import { VelocityOverlay } from "./velocity-overlay";
 import { TourProvider, TourOverlay } from "./tour";
@@ -231,6 +233,8 @@ function App() {
 
   // Preferences (persisted separately)
   const [darkMode, setDarkMode] = useState(savedPrefs.current.darkMode);
+  // Glassmorphic surfaces. Orthogonal to darkMode: composes with both modes and all 6 accents.
+  const [glassMode, setGlassMode] = useState(savedPrefs.current.glassMode);
   const [colorPalette, setColorPalette] = useState<ColorPalette>(
     savedPrefs.current.colorPalette,
   );
@@ -268,12 +272,16 @@ function App() {
     localStorage.setItem('umalator_v2_duelingRates', JSON.stringify(duelingRates));
   }, [duelingRates]);
   const [laneMovement, setLaneMovement] = useState(true);
+  // 'v2' = our engine, 'v1' = alpha123's vendored upstream engine (tools/sync-upstream-engine.mjs)
+  const [engine, setEngine] = useState<'v1' | 'v2'>('v2');
   const [autoSeed, setAutoSeed] = useState(false);
   const [forceFullSpurt, setForceFullSpurt] = useState(true);
 
   // Panel visibility
   const [umaDrawerOpen, setUmaDrawerOpen] = useState(false);
-  const [activeUmaTab, setActiveUmaTab] = useState<1 | 2 | "trainees">(1);
+  const [activeUmaTab, setActiveUmaTab] = useState<1 | 2 | "trainees" | "umas">(1);
+  // Lifted so the roster/filters/sort survive the tab unmount that Load triggers.
+  const [umasState, setUmasState] = useState<UmasTabState>(initialUmasTabState);
   const [summaryDrawerOpen, setSummaryDrawerOpen] = useState(false);
   const [feedbackDrawerOpen, setFeedbackDrawerOpen] = useState(false);
 
@@ -489,8 +497,8 @@ function App() {
 
   // Save preferences immediately
   useEffect(() => {
-    savePreferences({ darkMode, colorPalette, uiScale });
-  }, [darkMode, colorPalette, uiScale]);
+    savePreferences({ darkMode, glassMode, colorPalette, uiScale });
+  }, [darkMode, glassMode, colorPalette, uiScale]);
 
   useEffect(() => {
 	localStorage.setItem('umalator_v2_hideNotInGame', String(hideNotInGame));
@@ -566,6 +574,12 @@ function App() {
           setSamples(state.samples);
           setUma1(state.uma1);
           setUma2(state.uma2);
+          // Restore hint levels (older links omit this → empty map = all zero).
+          setSkillHints(
+            state.skillHints
+              ? new Map(Object.entries(state.skillHints))
+              : new Map(),
+          );
           setSelectedPresetId(null);
         }
       }
@@ -830,6 +844,7 @@ function App() {
             competeFight,
             duelingRates: competeFight ? duelingRates : undefined,
             laneMovement,
+            engine,
           }),
         },
       });
@@ -862,6 +877,7 @@ function App() {
               competeFight,
               duelingRates: competeFight ? duelingRates : undefined,
               laneMovement,
+              engine,
             }),
             forceFullSpurt,
           },
@@ -930,6 +946,7 @@ function App() {
     competeFight,
     duelingRates,
     laneMovement,
+    engine,
     autoSeed,
     handleRunSkillChart,
     rosterHorses,
@@ -1307,7 +1324,7 @@ function App() {
         <IntlProvider definition={STRINGS}>
           <div
             id="app-v2"
-            class={`${darkMode ? "" : "light"} ${CC_DEV && yandereMode ? "yandere" : (colorPalette !== 'uma-green' ? colorPalette : '')} ${showNotification ? "v2-has-notification" : ""}`}
+            class={`${darkMode ? "" : "light"} ${glassMode ? "glass" : ""} ${CC_DEV && yandereMode ? "yandere" : (colorPalette !== 'uma-green' ? colorPalette : '')} ${showNotification ? "v2-has-notification" : ""}`}
             style={{ "--ui-scale": uiScale / 100 } as any}
           >
             {showNotification && (
@@ -1324,7 +1341,19 @@ function App() {
                   onChange={(val) => handlePresetSelect(val as number | null)}
                   options={[
                     { value: null, label: "Custom" },
-                    ...presets.map((p) => ({
+                    // Dropdown is windowed to the current CM ± 5; any other CM
+                    // is still loadable via ?preset=. If the active selection is
+                    // outside the window (e.g. loaded from a URL), surface it too.
+                    ...(selectedPresetId != null &&
+                    !visiblePresets.some((p) => p.id === selectedPresetId)
+                      ? presets
+                          .filter((p) => p.id === selectedPresetId)
+                          .map((p) => ({
+                            value: p.id,
+                            label: `CM ${p.id} - ${p.name}`,
+                          }))
+                      : []),
+                    ...visiblePresets.map((p) => ({
                       value: p.id,
                       label: `CM ${p.id} - ${p.name}`,
                     })),
@@ -1442,6 +1471,19 @@ function App() {
                           >
                             Light
                           </button>
+                          {/* Glass is a separate axis, not a third mode: it layers on top of
+                              whichever of Dark/Light is active, and on any accent. */}
+                          <button
+                            type="button"
+                            class={`v2-theme-btn v2-theme-btn-glass ${glassMode ? 'active' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setGlassMode(!glassMode);
+                            }}
+                            title="Glassmorphic surfaces (works with Dark or Light)"
+                          >
+                            Glass
+                          </button>
                         </div>
                       ),
                     },
@@ -1512,6 +1554,10 @@ function App() {
                           samples,
                           uma1,
                           uma2,
+                          // Only persist non-zero hint levels to keep the link compact.
+                          skillHints: Object.fromEntries(
+                            [...skillHints].filter(([, v]) => v > 0),
+                          ),
                         });
                       },
                     },
@@ -1586,6 +1632,8 @@ function App() {
               duelingRates={duelingRates}
               setDuelingRates={setDuelingRates}
               laneMovement={laneMovement}
+              engine={engine}
+              setEngine={setEngine}
               setLaneMovement={setLaneMovement}
               autoSeed={autoSeed}
               setAutoSeed={setAutoSeed}
@@ -1978,6 +2026,14 @@ function App() {
                     <Users size={14} />
                     Saved
                   </button>
+                  <button
+                    type="button"
+                    class={`v2-uma-tab-umas ${activeUmaTab === "umas" ? "active" : ""}`}
+                    onClick={() => setActiveUmaTab("umas")}
+                  >
+                    <LayoutGrid size={14} />
+                    Umas
+                  </button>
                 </div>
 
                 <div class="v2-drawer-content">
@@ -2024,6 +2080,16 @@ function App() {
                       currentMode={mode}
                       currentUma1={uma1}
                       currentUma2={uma2}
+                    />
+                  )}
+                  {activeUmaTab === "umas" && (
+                    <UmasTab
+                      state={umasState}
+                      onStateChange={setUmasState}
+                      onLoadToUma1={(s) => { handleUma1Load(s); setActiveUmaTab(1); }}
+                      onLoadToUma2={(s) => { handleUma2Load(s); setActiveUmaTab(2); }}
+                      currentMode={mode}
+                      course={courseData[courseId]}
                     />
                   )}
                 </div>
@@ -2364,6 +2430,8 @@ function App() {
                         duelingRates={duelingRates}
                         setDuelingRates={setDuelingRates}
                         laneMovement={laneMovement}
+                        engine={engine}
+                        setEngine={setEngine}
                         setLaneMovement={setLaneMovement}
                         autoSeed={autoSeed}
                         setAutoSeed={setAutoSeed}
@@ -2381,6 +2449,17 @@ function App() {
                             type="checkbox"
                             checked={darkMode}
                             onChange={() => setDarkMode(!darkMode)}
+                          />
+                          <span class="v2-switch-slider" />
+                        </label>
+                      </div>
+                      <div class="v2-mobile-settings-row">
+                        <label>Glass</label>
+                        <label class="v2-switch">
+                          <input
+                            type="checkbox"
+                            checked={glassMode}
+                            onChange={() => setGlassMode(!glassMode)}
                           />
                           <span class="v2-switch-slider" />
                         </label>

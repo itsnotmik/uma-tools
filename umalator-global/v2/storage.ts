@@ -388,34 +388,55 @@ export function downloadHorseJson(horse: UmaState): void {
 }
 
 /**
- * Import horse state from JSON file
- * Returns a promise that resolves to the parsed UmaState or null
+ * A parsed import candidate: one uma from one uploaded file.
  */
-export function importHorseJson(): Promise<UmaState | null> {
+export interface ImportCandidate {
+	name: string;     // source file name (display + fallback)
+	data: UmaState;   // parsed + validated
+}
+
+/**
+ * Open a MULTI-select JSON file picker, parse each file (one uma per file), and
+ * return all valid candidates plus the names of files that failed to parse.
+ * Never rejects; invalid files are skipped.
+ */
+export function importHorseJsonMulti(): Promise<{ candidates: ImportCandidate[]; skipped: string[] }> {
 	return new Promise((resolve) => {
 		const input = document.createElement('input');
 		input.type = 'file';
 		input.accept = '.json,application/json';
+		input.multiple = true;
 
 		input.onchange = async (e) => {
-			const file = (e.target as HTMLInputElement).files?.[0];
-			if (!file) {
-				resolve(null);
+			const files = Array.from((e.target as HTMLInputElement).files || []);
+			if (files.length === 0) {
+				resolve({ candidates: [], skipped: [] });
 				return;
 			}
 
-			try {
-				const text = await file.text();
-				const json = tryParseImportText(text);
-				const parsed = json ? validateAndParseUmaJson(json) : null;
-				resolve(parsed);
-			} catch (err) {
-				console.error('Failed to parse JSON file:', err);
-				resolve(null);
+			const candidates: ImportCandidate[] = [];
+			const skipped: string[] = [];
+
+			for (const file of files) {
+				try {
+					const text = await file.text();
+					const json = tryParseImportText(text);
+					const parsed = json ? validateAndParseUmaJson(json) : null;
+					if (parsed) {
+						candidates.push({ name: file.name, data: parsed });
+					} else {
+						skipped.push(file.name);
+					}
+				} catch (err) {
+					console.error('Failed to parse JSON file:', file.name, err);
+					skipped.push(file.name);
+				}
 			}
+
+			resolve({ candidates, skipped });
 		};
 
-		input.oncancel = () => resolve(null);
+		input.oncancel = () => resolve({ candidates: [], skipped: [] });
 		input.click();
 	});
 }
@@ -539,6 +560,8 @@ export const COLOR_PALETTES: ColorPalette[] = ['uma-green', 'sage-green', 'vibra
  */
 export interface Preferences {
 	darkMode: boolean;
+	/** Glassmorphic surfaces. Orthogonal to darkMode -- composes with both modes and every accent. */
+	glassMode: boolean;
 	colorPalette: ColorPalette;
 	notificationDismissed: string; // ID of the last dismissed notification, or '' if none
 	tourCompleted: boolean;
@@ -547,6 +570,7 @@ export interface Preferences {
 
 const DEFAULT_PREFERENCES: Preferences = {
 	darkMode: true,
+	glassMode: false,
 	colorPalette: 'sage-green',
 	notificationDismissed: '',
 	tourCompleted: false,
@@ -589,6 +613,7 @@ export function loadPreferences(): Preferences {
 
 		return {
 			darkMode: typeof json.darkMode === 'boolean' ? json.darkMode : DEFAULT_PREFERENCES.darkMode,
+			glassMode: typeof json.glassMode === 'boolean' ? json.glassMode : DEFAULT_PREFERENCES.glassMode,
 			colorPalette,
 			notificationDismissed: typeof json.notificationDismissed === 'string' ? json.notificationDismissed : DEFAULT_PREFERENCES.notificationDismissed,
 			tourCompleted: typeof json.tourCompleted === 'boolean' ? json.tourCompleted : DEFAULT_PREFERENCES.tourCompleted,
@@ -616,6 +641,7 @@ export interface ShareableState {
 	samples: number;
 	uma1: UmaState;
 	uma2: UmaState;
+	skillHints?: Record<string, number>;  // skill id → hint level; only non-zero saved. Optional for backward compat with older links.
 }
 
 /**
@@ -684,6 +710,7 @@ export async function deserializeStateFromHash(hash: string): Promise<ShareableS
 			samples: typeof parsed.samples === 'number' ? parsed.samples : 500,
 			uma1,
 			uma2,
+			skillHints: (parsed.skillHints && typeof parsed.skillHints === 'object') ? parsed.skillHints : {},
 		};
 	} catch (e) {
 		console.error('Failed to deserialize state from hash:', e);

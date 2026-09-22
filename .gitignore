@@ -44,5 +44,19 @@ build-planner/bundle.js
 build-planner/bundle.css
 build-planner/bundle.2.js
 
+# Discord bot — source is kept out of the public repo (deployed directly to
+# Railway). A few files (package.json, package-lock.json, tsconfig.json,
+# src/gemini-ocr.ts) were committed earlier and stay tracked; this rule only
+# stops NEW bot files from being swept in by `git add`. Already-tracked files
+# are unaffected by gitignore and can still be edited/committed normally.
+/uma-tools-bot/
+
 # Large media files
 videos/
+# Raw game exports (training logs, UmaExtractor dumps) can contain LIVE CREDENTIALS —
+# steam_session_ticket, steam_id, viewer_id. Never commit them.
+# Drop personal samples in docs/private/ instead; it is ignored wholesale.
+/docs/private/
+/docs/Oguri Cap*.json
+.upstream-engine-cache/
+.sync-summary.txt

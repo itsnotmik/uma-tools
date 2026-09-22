@@ -371,7 +371,8 @@ body {
 
 /* Subtle background texture */
 #app-v2 {
-  min-height: 100vh;
+  min-height: 100vh; /* fallback */
+  min-height: 100dvh;
   max-width: 100vw;
   overflow-x: clip;
   display: flex;
@@ -2996,6 +2997,11 @@ body {
   white-space: nowrap;
 }
 
+.v2-uma-rating {
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
 .v2-uma-placeholder {
   font-size: var(--font-base);
   color: var(--color-text-tertiary);
@@ -3799,7 +3805,8 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 8vh;
+  padding-top: 8vh; /* fallback */
+  padding-top: 8dvh;
   z-index: 10000;
   animation: v2-modal-fade-in 0.2s ease-out;
 }
@@ -3807,7 +3814,8 @@ body {
 .v2-skill-picker-modal {
   width: 90%;
   max-width: 1080px;
-  max-height: 75vh;
+  max-height: 75vh; /* fallback */
+  max-height: 75dvh;
   background: var(--color-surface);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
@@ -6044,7 +6052,8 @@ body {
   transform: translateY(100%);
   transition: transform var(--transition-normal);
   z-index: 1100;
-  max-height: 80vh;
+  max-height: 80vh; /* fallback */
+  max-height: 80dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-bottom: calc(64px + env(safe-area-inset-bottom, 0));
@@ -6161,6 +6170,13 @@ body {
 
   .v2-uma-drawer {
     left: -100%;
+    /* Full-screen overlay on mobile: the previous top:90px gap relied on the
+       page header staying pinned, but the header un-sticks when scrolled
+       (overflow-clip ancestor), leaving empty space at the top. The drawer has
+       its own header + close, so cover the whole (dynamic) viewport instead. */
+    top: 0;
+    height: 100vh; /* fallback */
+    height: 100dvh;
   }
 
   .v2-uma-drawer.open {
@@ -6252,7 +6268,8 @@ body {
 
   /* Main content scrollable area */
   .v2-main {
-    min-height: calc(100vh - 120px);
+    min-height: calc(100vh - 120px); /* fallback */
+    min-height: calc(100dvh - 120px);
     overflow-x: hidden;
   }
 
@@ -6514,7 +6531,8 @@ body {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   overflow: auto;
-  max-height: calc(100vh - 300px);
+  max-height: calc(100vh - 300px); /* fallback */
+  max-height: calc(100dvh - 300px);
 }
 
 .v2-skill-chart-wrapper.dirty {
@@ -6834,11 +6852,22 @@ tr:hover .v2-skill-hide-btn {
 
   .v2-skill-chart-table {
     font-size: var(--font-xs);
+    /* table-layout:fixed + width:100% crushed 8 columns into ~50px each; with
+       overflow:visible cells, values spilled over the skill-name column (overlap).
+       Give the table a real min-width so it overflows the wrapper and scrolls
+       horizontally instead of collapsing. */
+    min-width: 640px;
   }
 
   .v2-skill-chart-table th,
   .v2-skill-chart-table td {
     padding: var(--space-xs) var(--space-sm);
+  }
+
+  /* Unique-skill level input inherits ~0.8em (<16px), which makes iOS auto-zoom
+     on focus and hide the narrow right-edge box. 16px is the zoom threshold. */
+  .v2-skill-lv-input {
+    font-size: 16px;
   }
 }
 
@@ -8235,4 +8264,247 @@ tr:hover .v2-skill-hide-btn {
 	display: flex;
 	justify-content: flex-end;
 	gap: var(--space-sm);
+}
+
+/* Multi-file import picker */
+.v2-import-picker-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+	gap: 12px;
+	max-height: 60vh;
+	overflow-y: auto;
+	padding: 4px;
+}
+.v2-import-picker-card {
+	display: block;
+	width: 100%;
+	text-align: left;
+	background: var(--v2-card-bg, rgba(255, 255, 255, 0.04));
+	border: 1px solid var(--v2-border, rgba(255, 255, 255, 0.12));
+	border-radius: 8px;
+	padding: 8px;
+	cursor: pointer;
+	transition: border-color 120ms ease, background 120ms ease;
+}
+.v2-import-picker-card:hover,
+.v2-import-picker-card:focus-visible {
+	border-color: var(--v2-accent, #7fbf7e);
+	background: var(--v2-card-bg-hover, rgba(255, 255, 255, 0.08));
+	outline: none;
+}
+
+/* ============================================================
+   GLASS THEME
+   ------------------------------------------------------------
+   A separate axis, not a third mode: `.glass` layers on top of
+   whichever of Dark/Light is active, and composes with all six
+   accent palettes. Everything below is token overrides so the
+   ~165 surface and ~111 border usages pick it up for free.
+
+   The backdrop is an accent-tinted mesh derived from
+   --color-primary-glow, so switching accent also reskins the
+   blur behind the panels.
+   ============================================================ */
+
+#app-v2.glass {
+  /* Surfaces are tinted SCRIMS in the base colour, not white overlays. A white tint
+     only reads as "glass" over a backdrop that is already dark; put a bright image
+     behind it and a 4.5% white wash does nothing, so the backdrop shows through at
+     ~95% and text has nothing to sit on. Darkening toward the base instead keeps
+     contrast bounded no matter what is underneath. Alpha still climbs with elevation
+     so stacked panels stay distinguishable. */
+  --color-surface: rgba(13, 17, 25, 0.38);
+  --color-surface-elevated: rgba(19, 25, 36, 0.48);
+  --color-surface-overlay: rgba(20, 24, 34, 0.82);
+  --color-surface-hover: rgba(30, 38, 52, 0.55);
+
+  /* Brighter hairlines: a 0.08 border disappears against a blurred backdrop. */
+  --color-border: rgba(255, 255, 255, 0.14);
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.22);
+
+  /* Deeper, softer shadows to separate panes that no longer have solid fills. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  /* 16px leaves artwork legible enough to compete with body text; 26px reliably
+     destroys high-frequency detail. */
+  --glass-blur: 26px;
+  --glass-blur-strong: 40px;
+  /* Raise toward 0.85 for busy artwork, drop toward 0.35 for a plain backdrop. */
+  --glass-scrim: rgba(8, 11, 17, 0.62);
+
+  /* The default muted/faint greys are tuned for an opaque #12151c panel. On glass the
+     worst case panel composites to ~rgb(50,53,57), where #6b7280 lands at 2.55:1 and
+     fails WCAG AA. Lifted so muted text clears 4.5:1 even with a white image behind. */
+  --color-text-muted: #9aa3b2;
+  --color-text-faint: #7d8695;
+
+  /* Lift the base a little: at #08090c there is nothing for translucent panels to
+     reveal, and the theme reads as plain dark. */
+  --color-bg: #0d1119;
+  /* bg-subtle backs several inset panels (sim settings, sections). Opaque here would
+     punch solid holes through the glass, so it gets the same translucent treatment. */
+  --color-bg-subtle: rgba(10, 13, 20, 0.32);
+
+  /* Mesh driven from --color-primary via color-mix so intensity is controlled here
+     rather than inherited from the much fainter --color-primary-glow. Each accent
+     reskins the backdrop for free. */
+  /* Each accent rule (#app-v2.sage-green etc.) paints an opaque background here. The
+     mesh lives on a z-index:-1 pseudo-element, which renders BEHIND its own parent's
+     background, so that background has to be cleared or it hides the mesh entirely.
+     Equal specificity to the accent rules, and later in the file, so this wins. */
+  background: none;
+
+  --glass-mesh:
+    radial-gradient(ellipse 75% 60% at 8% -12%,
+      color-mix(in srgb, var(--color-primary) 55%, transparent) 0%, transparent 68%),
+    radial-gradient(ellipse 65% 55% at 92% 4%,
+      color-mix(in srgb, var(--color-accent) 32%, transparent) 0%, transparent 62%),
+    radial-gradient(ellipse 95% 65% at 45% 108%,
+      color-mix(in srgb, var(--color-primary) 42%, transparent) 0%, transparent 68%);
+}
+
+/* #app-v2 is a zero-width flex container, so a background set on it paints nothing.
+   Render the mesh as a viewport-fixed layer behind the content instead. */
+/* The backdrop layer, and where the contrast guarantee lives.
+   Order matters -- topmost first:
+     1. --glass-scrim   flat wash that clamps whatever is below into a known
+                        luminance band. This is what makes an arbitrary image safe,
+                        and it is why panel tint can stay low enough to read as glass.
+     2. --glass-image   optional user artwork (set it to a url(); unset = no layer)
+     3. --glass-mesh    the accent-tinted gradients
+     4. --color-bg      opaque base
+   Set --glass-image and the scrim automatically covers it; no other change needed. */
+#app-v2.glass::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--glass-scrim), var(--glass-scrim)),
+    var(--glass-image, linear-gradient(transparent, transparent)),
+    var(--glass-mesh),
+    var(--color-bg);
+  background-size: cover, cover, auto, auto;
+  background-position: center, center, center, center;
+}
+
+/* Grain. Heavy blur over flat gradients bands badly; a little noise breaks it up
+   and is what makes the surface read as a material rather than a washed-out image. */
+#app-v2.glass::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Light + glass: same structure, inverted alphas. */
+#app-v2.glass.light {
+  --color-surface: rgba(255, 255, 255, 0.62);
+  --color-surface-elevated: rgba(255, 255, 255, 0.74);
+  --color-surface-overlay: rgba(255, 255, 255, 0.93);
+  --color-surface-hover: rgba(255, 255, 255, 0.80);
+
+  --color-border: rgba(0, 0, 0, 0.10);
+  --color-border-subtle: rgba(0, 0, 0, 0.06);
+  --color-border-strong: rgba(0, 0, 0, 0.16);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 8px 24px rgba(31, 41, 55, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --shadow-lg: 0 16px 48px rgba(31, 41, 55, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  --color-bg: #eef1f7;
+  --color-bg-subtle: rgba(255, 255, 255, 0.55);
+  --glass-scrim: rgba(244, 247, 252, 0.66);
+  --glass-mesh:
+    radial-gradient(ellipse 75% 60% at 8% -12%,
+      color-mix(in srgb, var(--color-primary) 20%, transparent) 0%, transparent 62%),
+    radial-gradient(ellipse 65% 55% at 92% 4%,
+      color-mix(in srgb, var(--color-accent) 14%, transparent) 0%, transparent 58%),
+    radial-gradient(ellipse 95% 65% at 45% 108%,
+      color-mix(in srgb, var(--color-primary) 16%, transparent) 0%, transparent 62%);
+}
+
+/* Blur the panels. Scoped to the containers that actually read a surface token
+   rather than blanket-applied: backdrop-filter forces a new stacking context and
+   is the expensive part of this theme. */
+#app-v2.glass .v2-header,
+#app-v2.glass .v2-track-container,
+#app-v2.glass .v2-results-pane,
+#app-v2.glass .v2-uma-stats-card,
+#app-v2.glass .v2-sim-settings,
+#app-v2.glass .v2-dropdown-menu,
+#app-v2.glass .v2-tooltip,
+#app-v2.glass .v2-folder-card,
+#app-v2.glass .v2-password-card,
+#app-v2.glass .v2-dueling-rates-popover,
+#app-v2.glass .v2-skill-popover-stats,
+#app-v2.glass .v2-mobile-nav {
+  /* saturate() alone made busy backdrops MORE colourful and harder to read past.
+     Pair it with a brightness clamp so bright artwork is pulled down under dark
+     panels; the light variant lifts instead. */
+  backdrop-filter: blur(var(--glass-blur)) saturate(115%) brightness(0.72);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(115%) brightness(0.72);
+}
+
+#app-v2.glass.light .v2-header,
+#app-v2.glass.light .v2-track-container,
+#app-v2.glass.light .v2-results-pane,
+#app-v2.glass.light .v2-uma-stats-card,
+#app-v2.glass.light .v2-sim-settings,
+#app-v2.glass.light .v2-dropdown-menu,
+#app-v2.glass.light .v2-tooltip,
+#app-v2.glass.light .v2-folder-card,
+#app-v2.glass.light .v2-password-card,
+#app-v2.glass.light .v2-dueling-rates-popover,
+#app-v2.glass.light .v2-skill-popover-stats,
+#app-v2.glass.light .v2-mobile-nav {
+  backdrop-filter: blur(var(--glass-blur)) saturate(110%) brightness(1.28);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(110%) brightness(1.28);
+}
+
+#app-v2.glass .v2-modal,
+#app-v2.glass .v2-drawer {
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(150%);
+}
+
+/* The Glass button in the settings dropdown sits beside Dark/Light but toggles
+   independently, so it gets a divider rather than reading as a third choice. */
+.v2-theme-btn-glass {
+  position: relative;
+}
+.v2-theme-btn-glass::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 20%;
+  height: 60%;
+  width: 1px;
+  background: var(--color-border-strong);
+}
+
+/* Respect reduced-transparency and reduced-motion users: drop the blur (the
+   expensive, motion-adjacent part) and fall back to solid surfaces. */
+@media (prefers-reduced-transparency: reduce) {
+  #app-v2.glass [class*="v2-"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  #app-v2.glass {
+    --color-surface: #12151c;
+    --color-surface-elevated: #181c26;
+    --color-surface-overlay: #1e2330;
+  }
+  #app-v2.glass.light {
+    --color-surface: #ffffff;
+    --color-surface-elevated: #ffffff;
+    --color-surface-overlay: #ffffff;
+  }
 }

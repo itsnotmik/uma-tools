@@ -17,10 +17,12 @@ import {
 	loadHorseSlot,
 	deleteHorseSlot,
 	downloadHorseJson,
-	importHorseJson,
+	importHorseJsonMulti,
 	copyHorseToClipboard,
 	pasteHorseFromClipboard,
 } from './storage';
+import type { ImportCandidate } from './storage';
+import { ImportPickerModal } from './import-picker';
 import { ChevronRight, Save, Upload, Download, Copy, Clipboard, Trash2, RotateCcw, Camera, LayoutGrid, Columns2 } from 'lucide-react';
 import { OCRModal } from './ocr-modal';
 
@@ -78,6 +80,9 @@ export interface UmaState {
 	outfitId: string;
 	starCount: number;
 	uniqueLv: number;
+	/** Game rating (rank_score) of the trained uma this was loaded from, if it came from the
+	 *  Umas roster tab. Display-only: the sim ignores it. */
+	rosterRating?: number;
 	speed: number;
 	stamina: number;
 	power: number;
@@ -160,6 +165,7 @@ interface UmaPortraitProps {
 	outfitId: string;
 	onSelect: (outfitId: string) => void;
 	hideNotInGame?: boolean;
+	rosterRating?: number;
 }
 
 // Outfit values may be a string (epithet) or an object with an epithet property
@@ -178,7 +184,7 @@ function searchNames(query: string): string[] {
 	return umaAltIds.filter(oid => umaNamesForSearch[oid].indexOf(q) > -1);
 }
 
-export function UmaPortrait({ outfitId, onSelect, hideNotInGame = false }: UmaPortraitProps) {
+export function UmaPortrait({ outfitId, onSelect, hideNotInGame = false, rosterRating }: UmaPortraitProps) {
 	const [isSearchOpen, setIsSearchOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [activeIdx, setActiveIdx] = useState(-1);
@@ -257,6 +263,11 @@ export function UmaPortrait({ outfitId, onSelect, hideNotInGame = false }: UmaPo
 					<>
 						<span class="v2-uma-epithet">{outfitName(uma.outfits[outfitId])}</span>
 						<span class="v2-uma-name">{uma.name[1]}</span>
+						{rosterRating != null && (
+							<span class="v2-uma-rating" title="Rating of the trained uma this was loaded from (Umas tab)">
+								Rating {rosterRating}
+							</span>
+						)}
 					</>
 				) : (
 					<span class="v2-uma-placeholder">Click portrait to select</span>
@@ -460,6 +471,10 @@ const STRATEGIES: { value: Strategy; label: string }[] = [
 	{ value: 'Oikomi', label: 'End Closer' },
 ];
 
+/** Display labels keyed by UmaState.strategy, derived so there's one source of truth. */
+export const STRATEGY_LABELS: Record<string, string> =
+	Object.fromEntries(STRATEGIES.map(s => [s.value, s.label]));
+
 interface StrategySelectProps {
 	value: Strategy;
 	onChange: (value: Strategy) => void;
@@ -574,6 +589,7 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 	const [saveModalName, setSaveModalName] = useState('');
 	const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 	const [deleteSlotName, setDeleteSlotName] = useState('');
+	const [pickerCandidates, setPickerCandidates] = useState<ImportCandidate[] | null>(null);
 
 	// Refresh saved slots list
 	const refreshSlots = useCallback(() => {
@@ -613,7 +629,8 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 			}
 		}
 
-		onChange({ outfitId, starCount, uniqueLv, skills: newSkills, forcedSkillPositions: newForcedPositions });
+		// onChange merges, so an old roster rating would stick to a different character.
+		onChange({ outfitId, starCount, uniqueLv, skills: newSkills, forcedSkillPositions: newForcedPositions, rosterRating: undefined });
 	}, [onChange, state.skills, state.forcedSkillPositions, state.starCount]);
 
 	// Save handlers
@@ -673,10 +690,16 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 	}, [onLoad]);
 
 	const handleImportJson = useCallback(async () => {
-		const imported = await importHorseJson();
-		if (imported && onLoad) {
-			onLoad(imported);
+		const { candidates, skipped } = await importHorseJsonMulti();
+		if (skipped.length > 0) {
+			alert(`Skipped ${skipped.length} file(s) that weren't valid uma JSON:\n${skipped.join('\n')}`);
 		}
+		if (candidates.length === 0) return;
+		if (candidates.length === 1) {
+			onLoad?.(candidates[0].data);
+			return;
+		}
+		setPickerCandidates(candidates);
 	}, [onLoad]);
 
 	const handlePasteFromClipboard = useCallback(async () => {
@@ -835,7 +858,7 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 			</div>
 
 			{/* Character portrait and selector */}
-			<UmaPortrait outfitId={state.outfitId} onSelect={handleOutfitSelect} hideNotInGame={hideNotInGame} />
+			<UmaPortrait outfitId={state.outfitId} onSelect={handleOutfitSelect} hideNotInGame={hideNotInGame} rosterRating={state.rosterRating} />
 
 			{/* Stats */}
 			<CollapsibleSection title="Stats" defaultOpen={true}>
@@ -887,6 +910,15 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 				onClose={() => setIsOCRModalOpen(false)}
 				onConfirm={handleOCRConfirm}
 			/>
+
+			{/* Import picker (multi-file) */}
+			{pickerCandidates && (
+				<ImportPickerModal
+					candidates={pickerCandidates}
+					onPick={(data) => { onLoad?.(data); setPickerCandidates(null); }}
+					onClose={() => setPickerCandidates(null)}
+				/>
+			)}
 
 			{/* Save Modal */}
 			<Modal

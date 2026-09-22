@@ -10,6 +10,7 @@ import { program, Option } from 'commander';
 program
 	.option('--debug')
 	.option('--dry-run-umas', 'preview umas.json localization changes without writing')
+	.option('--dry-run-skillnames', 'preview skillnames.json official-name sync without writing')
 	.addOption(new Option('--serve [port]', 'run development server on [port]').preset(8000).implies({debug: true}));
 
 program.parse();
@@ -125,6 +126,20 @@ function generateNotInGame() {
 	try {
 		const dbSkillsRaw = execSync(`sqlite3 "${masterDb}" "SELECT id FROM skill_data"`, { encoding: 'utf-8' });
 		const dbSkills = new Set(dbSkillsRaw.trim().split('\n'));
+
+		// docs/master.mdb is synced by hand and routinely lags the live client, which makes
+		// already-released skills show a "Not in game" badge. Upstream regenerates their Global
+		// skill_data.json from a current DB, so union their key set in.
+		// UNION, not replace: upstream's generator drops scenario/bonus skills (its filter is
+		// is_general_skill=1 OR rarity>=3), so swapping outright would wrongly flag skills the
+		// mdb correctly reports as live. Refresh with tools/sync-global-live-skills.mjs.
+		const livePath = path.join(dirname, 'global-live-skills.json');
+		let upstreamLive = 0;
+		if (fs.existsSync(livePath)) {
+			const before = dbSkills.size;
+			for (const id of JSON.parse(fs.readFileSync(livePath, 'utf-8')).skills || []) dbSkills.add(id);
+			upstreamLive = dbSkills.size - before;
+		}
 		const dbOutfitsRaw = execSync(`sqlite3 "${masterDb}" "SELECT id FROM card_data"`, { encoding: 'utf-8' });
 		const dbOutfits = new Set(dbOutfitsRaw.trim().split('\n'));
 
@@ -138,7 +153,8 @@ function generateNotInGame() {
 		};
 
 		fs.writeFileSync(outPath, JSON.stringify(result));
-		console.log(`not-in-game.json (master.mdb): ${result.skills.length} skills, ${result.outfits.length} outfits`);
+		console.log(`not-in-game.json (master.mdb): ${result.skills.length} skills, ${result.outfits.length} outfits`
+			+ (upstreamLive ? ` (${upstreamLive} more counted live via global-live-skills.json)` : ''));
 	} catch (e) {
 		console.warn(`Failed to regenerate not-in-game.json: ${e.message}. Leaving existing file in place.`);
 	}
@@ -231,16 +247,175 @@ function syncUmaLocalizations() {
 
 syncUmaLocalizations();
 
-const buildOptions = {
-	entryPoints: [{in: '../umalator/app.tsx', out: 'bundle'}, '../umalator/simulator.worker.ts'],
-	bundle: true,
-	minify: !debug,
-	outdir: '.',
-	write: !serve,
-	define: {CC_DEBUG: debug.toString(), CC_GLOBAL: 'true', CC_DEV: isDev.toString(), CC_OCR_PROXY: JSON.stringify(process.env.OCR_PROXY_URL || ''), CC_COW_SKIN: JSON.stringify(process.env.COW_SKIN || '')},
-	external: ['*.ttf'],
-	plugins: [redirectData, mockAssert, redirectTable, seedrandomPlugin],
-};
+// Sync skill names in skillnames.json from Global master.mdb.
+// Fast-forwarded (not-yet-Global) skills keep their community names; once a skill
+// releases on Global, its official localized name (text_data category 47) replaces
+// the community one on the next build. Only skills present in the Global DB's
+// skill_data (i.e. in-game) are touched. Pass --dry-run-skillnames to preview.
+function syncSkillNames() {
+	const masterDb = path.join(root, 'docs', 'master.mdb');
+	if (!fs.existsSync(masterDb)) {
+		console.log('skillnames.json sync: master.mdb not present, skipping');
+		return;
+	}
+
+	const dryRun = process.argv.includes('--dry-run-skillnames');
+	const namesPath = path.join(dirname, 'skillnames.json');
+
+	try {
+		const skillnames = JSON.parse(fs.readFileSync(namesPath, 'utf-8'));
+
+		// In-game skill IDs (present in the Global DB).
+		const inGameRaw = execSync(`sqlite3 "${masterDb}" "SELECT id FROM skill_data"`, { encoding: 'utf-8' });
+		const inGame = new Set(inGameRaw.trim().split('\n').filter(Boolean));
+
+		// Official English skill names (text_data category 47), keyed by skill id.
+		const officialRaw = execSync(
+			`sqlite3 -separator $'\\t' "${masterDb}" "SELECT \\"index\\", text FROM text_data WHERE category = 47"`,
+			{ encoding: 'utf-8' }
+		);
+		const official = new Map(
+			officialRaw.trim().split('\n').filter(Boolean).map(line => {
+				const tab = line.indexOf('\t');
+				return [line.slice(0, tab), line.slice(tab + 1)];
+			})
+		);
+
+		// Skills upstream also ships are named by tools/sync-upstream-data.mjs, which takes
+		// upstream's strings: it regenerates from a current client DB while docs/master.mdb
+		// is synced by hand and lags it by weeks. Overriding those here would undo genuine
+		// Cygames renames -- this is exactly how 202401 "Lightning Surge" kept reverting to
+		// the stale "Flash Forward". So only name skills upstream has no opinion on.
+		let upstreamNamed = new Set();
+		try {
+			const livePath = path.join(dirname, 'global-live-skills.json');
+			if (fs.existsSync(livePath)) upstreamNamed = new Set(JSON.parse(fs.readFileSync(livePath, 'utf-8')).skills || []);
+		} catch { /* fall through: without the list, behave as before */ }
+
+		const changes = [];
+		for (const id of inGame) {
+			if (upstreamNamed.has(id)) continue;
+			const off = official.get(id);
+			if (!off) continue;
+			const cur = skillnames[id];
+			if (Array.isArray(cur) && cur[0] !== off) {
+				changes.push(`${id}: "${cur[0]}" → "${off}"`);
+				cur[0] = off;
+			}
+		}
+
+		if (changes.length === 0) {
+			console.log('skillnames.json sync: no changes');
+			return;
+		}
+
+		console.log(`skillnames.json sync: ${changes.length} change(s)${dryRun ? ' (dry run)' : ''}`);
+		for (const c of changes) console.log(`  ${c}`);
+		if (!dryRun) fs.writeFileSync(namesPath, JSON.stringify(skillnames, null, '\t') + '\n');
+	} catch (e) {
+		// e.g. sqlite3 CLI absent on the Cloudflare build image, or a DB read error.
+		// Non-fatal: keep the committed skillnames.json as-is, like the other syncs.
+		console.warn(`skillnames.json sync skipped: ${e.message}. Leaving existing file in place.`);
+	}
+}
+
+syncSkillNames();
+
+// Generate v2/cm-presets.generated.json — Champions Meeting presets for Global.
+// Global CM N replays JP CM N exactly (course + season/weather/ground/time),
+// verified 1:1 against the shipped Global schedule. So:
+//   - race conditions come from the JP DB (docs/master(1).mdb), available far ahead
+//   - run dates come from the Global DB (authoritative) for CMs the client knows,
+//     falling back to the hand/MANT-maintained v2/cm-dates.json for future CMs
+//   - CM names are derived from the zodiac cycle (CM 1 = Taurus)
+// A CM is only emitted once a Global date is resolvable; undated future CMs are
+// skipped until their date is known.
+function generateCMPresets() {
+	const outPath = path.join(dirname, 'v2', 'cm-presets.generated.json');
+	const jpDb = path.join(root, 'docs', 'master(1).mdb');
+	const globalDb = path.join(root, 'docs', 'master.mdb');
+	const datesPath = path.join(dirname, 'v2', 'cm-dates.json');
+
+	if (!fs.existsSync(jpDb)) {
+		const exists = fs.existsSync(outPath);
+		console.log(
+			`cm-presets: JP master.mdb (docs/master(1).mdb) not present — ${exists
+				? 'leaving committed file alone'
+				: 'no committed file either, skipping'}`
+		);
+		return;
+	}
+
+	try {
+		// JP conditions per CM number (round 0 is representative; all rounds share conditions)
+		const jpRaw = execSync(
+			`sqlite3 -separator '|' "${jpDb}" "` +
+			`SELECT cs.id, r.course_set, rc.season, rc.weather, rc.ground, ri.time ` +
+			`FROM champions_schedule cs ` +
+			`JOIN champions_race_condition crc ON crc.champions_id = cs.id AND crc.round_id = 0 ` +
+			`JOIN race_instance ri ON ri.id = crc.race_instance_id ` +
+			`JOIN race r ON r.id = ri.race_id ` +
+			`JOIN race_condition rc ON rc.id = crc.race_condition_id ` +
+			`ORDER BY cs.id"`,
+			{ encoding: 'utf-8' }
+		);
+		const jp = new Map();
+		for (const line of jpRaw.trim().split('\n').filter(Boolean)) {
+			const [id, course, season, weather, ground, time] = line.split('|').map(Number);
+			jp.set(id, { courseId: course, season, weather, ground, time });
+		}
+
+		// Authoritative Global run dates per CM number (when the client knows them)
+		const globalDates = new Map();
+		if (fs.existsSync(globalDb)) {
+			const gRaw = execSync(
+				`sqlite3 -separator '|' "${globalDb}" "SELECT id, strftime('%Y-%m-%d', start_date, 'unixepoch') FROM champions_schedule"`,
+				{ encoding: 'utf-8' }
+			);
+			for (const line of gRaw.trim().split('\n').filter(Boolean)) {
+				const [id, date] = line.split('|');
+				globalDates.set(Number(id), date);
+			}
+		}
+
+		// Hand/MANT date map for CMs beyond the Global client horizon
+		let handDates = {};
+		if (fs.existsSync(datesPath)) handDates = JSON.parse(fs.readFileSync(datesPath, 'utf-8'));
+
+		const ZODIAC = ['Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo', 'Libra',
+			'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces', 'Aries'];
+
+		const out = [];
+		for (const [id, cond] of jp) {
+			const confirmed = globalDates.has(id);
+			const date = globalDates.get(id) ?? handDates[id];
+			if (!date) continue;  // no Global date known yet — can't place this event
+			out.push({
+				id,
+				type: 0,  // EventType.CM
+				name: `${ZODIAC[(id - 1) % 12]} Cup`,
+				date,
+				courseId: cond.courseId,
+				season: cond.season,
+				ground: cond.ground,
+				weather: cond.weather,
+				time: cond.time,
+				confirmed,
+			});
+		}
+		out.sort((a, b) => a.id - b.id);
+		fs.writeFileSync(outPath, JSON.stringify(out, null, 2) + '\n');
+		const nConfirmed = out.filter(p => p.confirmed).length;
+		console.log(`cm-presets.generated.json: ${out.length} presets (${nConfirmed} confirmed, ${out.length - nConfirmed} from hand map)`);
+	} catch (e) {
+		console.warn(`Failed to regenerate cm-presets.generated.json: ${e.message}. Leaving existing file in place.`);
+	}
+}
+
+generateCMPresets();
+
+// v1 was retired 2026-08-27; its routes now serve v2 at the root (see _redirects).
+// Only the v2 bundle is built here.
 
 // v2 experimental build options
 // Note: v2 uses npm @tanstack/react-table directly (v8 API), not the vendor files (v9 alpha API)
@@ -252,7 +427,7 @@ const buildOptionsV2 = {
 	outdir: '.',
 	write: !serve,
 	format: 'esm',  // v2 uses import.meta (env vars, worker URLs) — legal only in ESM output
-	define: {CC_DEBUG: debug.toString(), CC_GLOBAL: 'true', CC_DEV: isDev.toString(), CC_OCR_PROXY: JSON.stringify(process.env.OCR_PROXY_URL || ''), CC_COW_SKIN: JSON.stringify(process.env.COW_SKIN || '')},
+	define: {CC_DEBUG: debug.toString(), CC_GLOBAL: 'true', CC_DEV: isDev.toString(), CC_OCR_PROXY: JSON.stringify(process.env.OCR_PROXY_URL || ''), CC_TURNSTILE_SITEKEY: JSON.stringify(process.env.TURNSTILE_SITEKEY || ''), CC_COW_SKIN: JSON.stringify(process.env.COW_SKIN || '')},
 	external: ['*.ttf'],
 	plugins: [redirectData, mockAssert, seedrandomPlugin],  // No redirectTable - use npm packages
 };
@@ -330,27 +505,10 @@ function runServer(ctx, port) {
 }
 
 if (serve) {
-	// Build both main and v2 in serve mode
-	const ctx = await esbuild.context(buildOptions);
 	const ctxV2 = await esbuild.context(buildOptionsV2);
-
-	// Combine contexts for rebuilding
-	const combinedCtx = {
-		async rebuild() {
-			const [result1, result2] = await Promise.all([ctx.rebuild(), ctxV2.rebuild()]);
-			return {
-				outputFiles: [...result1.outputFiles, ...result2.outputFiles]
-			};
-		}
-	};
-
-	runServer(combinedCtx, port);
+	runServer(ctxV2, port);
 	console.log(`Serving on http://[::]:${port}/ ...`);
-	console.log(`  v1: http://localhost:${port}/umalator-global/`);
 	console.log(`  v2: use Vite — cd v2 && npm run dev`);
 } else {
-	await Promise.all([
-		esbuild.build(buildOptions),
-		esbuild.build(buildOptionsV2)
-	]);
+	await esbuild.build(buildOptionsV2);
 }

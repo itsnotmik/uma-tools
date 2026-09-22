@@ -17,9 +17,11 @@ interface MobileNavProps {
 	onRun: () => void;
 	isRunning?: boolean;
 	hasResults?: boolean;
+	/** Extra disable condition for RUN (mirrors the desktop RUN button gating). */
+	runDisabled?: boolean;
 }
 
-export function MobileNav({ activeView, onViewChange, onRun, isRunning, hasResults }: MobileNavProps) {
+export function MobileNav({ activeView, onViewChange, onRun, isRunning, hasResults, runDisabled }: MobileNavProps) {
 	return (
 		<nav class="v2-mobile-nav">
 			<button
@@ -42,7 +44,7 @@ export function MobileNav({ activeView, onViewChange, onRun, isRunning, hasResul
 				type="button"
 				class="v2-mobile-nav-run"
 				onClick={onRun}
-				disabled={isRunning}
+				disabled={isRunning || runDisabled}
 			>
 				<Play size={24} />
 				<span>{isRunning ? 'Running' : 'RUN'}</span>

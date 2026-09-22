@@ -125,7 +125,9 @@ function generateNotInGame() {
 
 	try {
 		const dbSkillsRaw = execSync(`sqlite3 "${masterDb}" "SELECT id FROM skill_data"`, { encoding: 'utf-8' });
-		const dbSkills = new Set(dbSkillsRaw.trim().split('\n'));
+		// split(/\r?\n/): on Windows the sqlite3 CLI emits CRLF line endings; a bare
+		// split('\n') leaves a trailing \r on every id, breaking every Set lookup.
+		const dbSkills = new Set(dbSkillsRaw.trim().split(/\r?\n/));
 
 		// docs/master.mdb is synced by hand and routinely lags the live client, which makes
 		// already-released skills show a "Not in game" badge. Upstream regenerates their Global
@@ -141,7 +143,7 @@ function generateNotInGame() {
 			upstreamLive = dbSkills.size - before;
 		}
 		const dbOutfitsRaw = execSync(`sqlite3 "${masterDb}" "SELECT id FROM card_data"`, { encoding: 'utf-8' });
-		const dbOutfits = new Set(dbOutfitsRaw.trim().split('\n'));
+		const dbOutfits = new Set(dbOutfitsRaw.trim().split(/\r?\n/));
 
 		const localSkills = JSON.parse(fs.readFileSync(path.join(dirname, 'skill_data.json'), 'utf-8'));
 		const localUmas = JSON.parse(fs.readFileSync(path.join(dirname, 'umas.json'), 'utf-8'));
@@ -186,7 +188,7 @@ function syncUmaLocalizations() {
 		{ encoding: 'utf-8' }
 	);
 	const epithets = new Map(
-		epithetsRaw.trim().split('\n').filter(Boolean).map(line => {
+		epithetsRaw.trim().split(/\r?\n/).filter(Boolean).map(line => {
 			const tab = line.indexOf('\t');
 			return [line.slice(0, tab), line.slice(tab + 1)];
 		})
@@ -197,7 +199,7 @@ function syncUmaLocalizations() {
 		{ encoding: 'utf-8' }
 	);
 	const names = new Map(
-		namesRaw.trim().split('\n').filter(Boolean).map(line => {
+		namesRaw.trim().split(/\r?\n/).filter(Boolean).map(line => {
 			const tab = line.indexOf('\t');
 			return [line.slice(0, tab), line.slice(tab + 1)];
 		})
@@ -267,7 +269,7 @@ function syncSkillNames() {
 
 		// In-game skill IDs (present in the Global DB).
 		const inGameRaw = execSync(`sqlite3 "${masterDb}" "SELECT id FROM skill_data"`, { encoding: 'utf-8' });
-		const inGame = new Set(inGameRaw.trim().split('\n').filter(Boolean));
+		const inGame = new Set(inGameRaw.trim().split(/\r?\n/).filter(Boolean));
 
 		// Official English skill names (text_data category 47), keyed by skill id.
 		const officialRaw = execSync(
@@ -275,7 +277,7 @@ function syncSkillNames() {
 			{ encoding: 'utf-8' }
 		);
 		const official = new Map(
-			officialRaw.trim().split('\n').filter(Boolean).map(line => {
+			officialRaw.trim().split(/\r?\n/).filter(Boolean).map(line => {
 				const tab = line.indexOf('\t');
 				return [line.slice(0, tab), line.slice(tab + 1)];
 			})
@@ -360,7 +362,7 @@ function generateCMPresets() {
 			{ encoding: 'utf-8' }
 		);
 		const jp = new Map();
-		for (const line of jpRaw.trim().split('\n').filter(Boolean)) {
+		for (const line of jpRaw.trim().split(/\r?\n/).filter(Boolean)) {
 			const [id, course, season, weather, ground, time] = line.split('|').map(Number);
 			jp.set(id, { courseId: course, season, weather, ground, time });
 		}
@@ -372,7 +374,7 @@ function generateCMPresets() {
 				`sqlite3 -separator '|' "${globalDb}" "SELECT id, strftime('%Y-%m-%d', start_date, 'unixepoch') FROM champions_schedule"`,
 				{ encoding: 'utf-8' }
 			);
-			for (const line of gRaw.trim().split('\n').filter(Boolean)) {
+			for (const line of gRaw.trim().split(/\r?\n/).filter(Boolean)) {
 				const [id, date] = line.split('|');
 				globalDates.set(Number(id), date);
 			}

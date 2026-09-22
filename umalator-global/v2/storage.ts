@@ -485,7 +485,7 @@ export interface SessionState {
 	time: number;
 	// Simulation settings
 	samples: number;
-	mode: 'compare' | 'skill' | 'stamina' | 'roster';
+	mode: 'compare' | 'skill' | 'stamina' | 'roster' | 'sparks';
 	// Uma states
 	uma1: UmaState;
 	uma2: UmaState;

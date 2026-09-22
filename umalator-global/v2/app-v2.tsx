@@ -60,6 +60,7 @@ import {
   Calendar,
   Heart,
   LayoutGrid,
+  Sparkles,
 } from "lucide-react";
 import { V2TrackSelect } from "./track-select";
 import { CompactConditions } from "./conditions";
@@ -74,6 +75,7 @@ import { SkillChartPane } from "./skill-chart-pane";
 import { SkillChartDetail } from "./skill-chart-detail";
 import { StaCalcResults } from "./stacalc";
 import { RosterPane, RosterResult } from "./roster-pane";
+import { SparksPane } from "./sparks-pane";
 import { ParsedRosterHorse, RosterParseResult, resolveCourseAptitudes } from "./roster-parser";
 // import { PasswordGate } from "./PasswordGate";
 import { FeedbackDrawer } from "./feedback-drawer";
@@ -245,7 +247,7 @@ function App() {
 
   // Simulation settings
   const [samples, setSamples] = useState(savedSession.current?.samples ?? 500);
-  const [mode, setMode] = useState<"compare" | "skill" | "stamina" | "roster">(
+  const [mode, setMode] = useState<"compare" | "skill" | "stamina" | "roster" | "sparks">(
     savedSession.current?.mode ?? "compare",
   );
   const [seed, setSeed] = useState(() =>
@@ -811,6 +813,8 @@ function App() {
 
   // Run simulation via worker
   const handleRunSimulation = useCallback(() => {
+    // Sparks mode is a pure data viewer — nothing to simulate.
+    if (mode === "sparks") return;
     if (autoSeed) {
       setSeed(Math.floor(Math.random() * 0xFFFFFFFF));
     }
@@ -1428,13 +1432,21 @@ function App() {
                     <Users size={14} />
                     Roster
                   </button>
+                  <button
+                    type="button"
+                    class={mode === "sparks" ? "active" : ""}
+                    onClick={() => setMode("sparks")}
+                  >
+                    <Sparkles size={14} />
+                    Sparks
+                  </button>
                 </div>
                 <Button
                   variant="primary"
                   className="v2-run-btn"
                   icon={<Play size={14} />}
                   onClick={handleRunSimulation}
-                  disabled={isRunning || (mode === "roster" && rosterHorses.length === 0)}
+                  disabled={isRunning || (mode === "roster" && rosterHorses.length === 0) || mode === "sparks"}
                 >
                   {isRunning ? "Running..." : "RUN"}
                 </Button>
@@ -1913,6 +1925,15 @@ function App() {
                     onRosterParsed={handleRosterParsed}
                     onSelectHorse={handleSelectRosterHorse}
                   />
+                ) : mode === "sparks" ? (
+                  /* RESULTS - Sparks (factor) viewer mode */
+                  <SparksPane
+                    horses={rosterHorses}
+                    courseSurface={courseSurface}
+                    courseDistanceType={courseDistanceType}
+                    onRosterParsed={handleRosterParsed}
+                    onSelectHorse={handleSelectRosterHorse}
+                  />
                 ) : mode === "stamina" ? (
                   /* RESULTS - Stamina calculator mode */
                   <div class="v2-results-pane">
@@ -2312,6 +2333,7 @@ function App() {
               onRun={handleRunSimulation}
               isRunning={isRunning}
               hasResults={!!results}
+              runDisabled={mode === "sparks" || (mode === "roster" && rosterHorses.length === 0)}
             />
 
             {/* Mobile settings panel */}
@@ -2382,6 +2404,14 @@ function App() {
                         >
                           <Users size={14} />
                           Roster
+                        </button>
+                        <button
+                          type="button"
+                          class={mode === "sparks" ? "active" : ""}
+                          onClick={() => setMode("sparks")}
+                        >
+                          <Sparkles size={14} />
+                          Sparks
                         </button>
                       </div>
                     </div>

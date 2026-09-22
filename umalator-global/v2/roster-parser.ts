@@ -44,6 +44,24 @@ const skillMetaTable = skillmeta as Record<string, { groupId?: string; iconId?: 
 const skillDataTable = skilldata as Record<string, unknown>;
 const umasTable = umas as Record<string, { name?: string[]; outfits?: Record<string, unknown> }>;
 
+/** One factor (spark) entry in the export. Star level is encoded in the id;
+ *  the export's `level` field is always 0 and is ignored. */
+export interface ExportFactorInfo {
+	factor_id: number | string;
+	level?: number;
+}
+
+/** One inherited runner (parent/grandparent) in the export's succession_chara_array.
+ *  position_id: 10/20 = parents, 11/12/21/22 = grandparents. */
+export interface ExportSuccessionChara {
+	position_id?: number;
+	card_id?: number;
+	rank?: number;
+	rarity?: number;
+	talent_level?: number;
+	factor_info_array?: ExportFactorInfo[];
+}
+
 /** A single entry from the account export array (only the fields we use). */
 export interface RosterExportEntry {
 	trained_chara_id?: number;
@@ -69,7 +87,21 @@ export interface RosterExportEntry {
 	proper_running_style_sashi?: number;
 	proper_running_style_oikomi?: number;
 	skill_array?: { skill_id: number | string; level?: number }[];
+	factor_info_array?: ExportFactorInfo[];
+	succession_chara_array?: ExportSuccessionChara[];
 	[key: string]: unknown;
+}
+
+/** A parsed inherited runner: display metadata + its spark (factor) ids. */
+export interface SuccessionChara {
+	positionId: number;
+	cardId: number;
+	name: string;
+	iconUrl: string;
+	rank: number;
+	rarity: number;
+	talentLevel: number;
+	factors: number[];
 }
 
 /** A parsed roster horse: the simulator-ready UmaState plus display metadata. */
@@ -88,6 +120,10 @@ export interface ParsedRosterHorse {
 	rawDistanceGrades: { short?: number; mile?: number; middle?: number; long?: number };
 	/** Raw ground aptitude grades (game 1-8) for surface resolution. */
 	rawGroundGrades: { turf?: number; dirt?: number };
+	/** The horse's own spark (factor) ids. Resolved to names/types via factor_data.json. */
+	factors: number[];
+	/** Inherited runners (2 parents + 4 grandparents), sorted by positionId. */
+	succession: SuccessionChara[];
 }
 
 export interface RosterParseOptions {
@@ -109,6 +145,31 @@ export interface RosterParseResult {
 
 function clampAptitude(v: number | undefined): UmaState['distanceAptitude'] {
 	return APT_MAP[v as number] ?? 'A';
+}
+
+/** Resolve display name + icon for an outfit id (shared by main horse and succession entries). */
+function charaDisplay(outfitId: string): { name: string; iconUrl: string } {
+	const charaId = outfitId.slice(0, 4);
+	const charaEntry = umasTable[charaId];
+	const name = charaEntry?.name?.[1] || charaEntry?.name?.[0] || `Uma ${charaId}`;
+	// Prefer the app's icon manifest (icons.json), keyed by outfit id; fall back to
+	// the conventional trained-icon path for outfits not in the manifest.
+	const iconUrl = (icons as Record<string, string>)[outfitId]
+		|| `/uma-tools/icons/chara/trained_chr_icon_${charaId}_${outfitId}_02.png`;
+	return { name, iconUrl };
+}
+
+/** Extract numeric factor ids from an export factor_info_array (tolerates absence,
+ *  null elements, and null ids — +null would otherwise coerce to a phantom id 0). */
+function factorIds(arr: ExportFactorInfo[] | undefined): number[] {
+	if (!Array.isArray(arr)) return [];
+	const out: number[] = [];
+	for (const f of arr) {
+		if (f == null || typeof f !== 'object' || f.factor_id == null) continue;
+		const id = +f.factor_id;
+		if (Number.isFinite(id)) out.push(id);
+	}
+	return out;
 }
 
 /**
@@ -142,6 +203,9 @@ export function resolveCourseAptitudes(
  * Heuristic: very low overall rank or low chara_grade.
  */
 function isStub(entry: RosterExportEntry): boolean {
+	// Null/garbage entries fall through to parseRosterEntry, which counts them
+	// as skippedInvalid regardless of the includeStubs toggle.
+	if (entry == null || typeof entry !== 'object') return false;
 	const grade = entry.chara_grade ?? 99;
 	const rank = entry.rank ?? 99;
 	return grade <= 3 || rank <= 5;
@@ -216,13 +280,27 @@ export function parseRosterEntry(
 		forcedSkillPositions: {},
 	};
 
-	const charaId = outfitId.slice(0, 4);
-	const charaEntry = umasTable[charaId];
-	const name = charaEntry?.name?.[1] || charaEntry?.name?.[0] || `Uma ${charaId}`;
-	// Prefer the app's icon manifest (icons.json), keyed by outfit id; fall back to
-	// the conventional trained-icon path for outfits not in the manifest.
-	const iconUrl = (icons as Record<string, string>)[outfitId]
-		|| `/uma-tools/icons/chara/trained_chr_icon_${charaId}_${outfitId}_02.png`;
+	const { name, iconUrl } = charaDisplay(outfitId);
+
+	// Sparks: the horse's own factors plus the 6 inherited runners' factors
+	// (positions 10/20 = parents, 11/12/21/22 = grandparents).
+	const succession: SuccessionChara[] = (Array.isArray(entry.succession_chara_array) ? entry.succession_chara_array : [])
+		.filter(s => s != null && typeof s === 'object')
+		.map(s => {
+			const succOutfit = String(s.card_id ?? '');
+			const disp = charaDisplay(succOutfit);
+			return {
+				positionId: s.position_id ?? 0,
+				cardId: s.card_id ?? 0,
+				name: disp.name,
+				iconUrl: disp.iconUrl,
+				rank: s.rank ?? 0,
+				rarity: s.rarity ?? 0,
+				talentLevel: s.talent_level ?? 0,
+				factors: factorIds(s.factor_info_array),
+			};
+		})
+		.sort((a, b) => a.positionId - b.positionId);
 
 	return {
 		uma,
@@ -244,6 +322,8 @@ export function parseRosterEntry(
 			turf: entry.proper_ground_turf,
 			dirt: entry.proper_ground_dirt,
 		},
+		factors: factorIds(entry.factor_info_array),
+		succession,
 	};
 }
 

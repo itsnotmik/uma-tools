@@ -14,13 +14,13 @@ import { h, Fragment } from 'preact';
 import { useState, useCallback, useMemo } from 'preact/hooks';
 import { Upload } from 'lucide-react';
 
-import { Modal, Button, Textarea, Switch } from './components';
+import { Modal, Button } from './components';
 import type { UmaState } from './uma-panel';
 import { STAT_ICONS, statRankIconUrl, aptitudeRankIconUrl, CollapsibleSection } from './uma-panel';
 import { getSkillName, getSkillIcon, getSkillRarityClass } from './skills';
 import { computeSkillSp } from './skill-chart-utils';
+import { RosterUploadModal } from './roster-upload';
 import {
-	parseRoster,
 	resolveCourseAptitudes,
 	type ParsedRosterHorse,
 	type RosterParseResult,
@@ -104,10 +104,6 @@ export function RosterPane({
 	onSelectHorse,
 }: RosterPaneProps) {
 	const [uploadOpen, setUploadOpen] = useState(false);
-	const [pasteText, setPasteText] = useState('');
-	const [parseError, setParseError] = useState<string | null>(null);
-	const [includeRentals, setIncludeRentals] = useState(false);
-	const [includeStubs, setIncludeStubs] = useState(false);
 	const [sortKey, setSortKey] = useState<'mean' | 'median'>('mean');
 	// The horse whose detail modal is open, joined with its rank + result, or null.
 	const [detail, setDetail] = useState<
@@ -120,43 +116,6 @@ export function RosterPane({
 		const { distanceAptitude, surfaceAptitude } = resolveCourseAptitudes(horse, courseDistanceType, courseSurface);
 		onSelectHorse({ ...horse.uma, distanceAptitude, surfaceAptitude }, slot);
 	}, [onSelectHorse, courseDistanceType, courseSurface]);
-
-	const doParse = useCallback((text: string) => {
-		setParseError(null);
-		let json: unknown;
-		try {
-			json = JSON.parse(text);
-		} catch (e) {
-			setParseError('Could not parse JSON. Make sure you pasted the full export.');
-			return;
-		}
-		if (!Array.isArray(json)) {
-			setParseError('Expected a JSON array of trained-character objects.');
-			return;
-		}
-		const parsed = parseRoster(json as any[], {
-			surface: courseSurface,
-			includeRentals,
-			includeStubs,
-		});
-		if (parsed.horses.length === 0) {
-			setParseError('No race-ready horses found after filtering. Try enabling the include toggles.');
-			return;
-		}
-		onRosterParsed(parsed);
-		setUploadOpen(false);
-		setPasteText('');
-	}, [courseSurface, includeRentals, includeStubs, onRosterParsed]);
-
-	const handleFile = useCallback((e: Event) => {
-		const input = e.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-		const reader = new FileReader();
-		reader.onload = () => doParse(String(reader.result || ''));
-		reader.onerror = () => setParseError('Could not read file.');
-		reader.readAsText(file);
-	}, [doParse]);
 
 	// Join results to horses and sort. Horses without a result (e.g. a sim error)
 	// are pushed to the bottom.
@@ -311,63 +270,12 @@ export function RosterPane({
 				</div>
 			)}
 
-			<Modal
+			<RosterUploadModal
 				isOpen={uploadOpen}
 				onClose={() => setUploadOpen(false)}
-				title="Upload account roster"
-				size="md"
-			>
-				<div class="v2-roster-upload">
-					<p class="v2-roster-upload-desc">
-						Upload or paste your game-account export (a JSON array of trained
-						characters). Every owned horse will be ranked by finish time on the
-						course currently configured above.
-					</p>
-
-					<div class="v2-roster-upload-file">
-						<label class="v2-roster-file-label">
-							<Upload size={14} />
-							<span>Choose data.json…</span>
-							<input type="file" accept=".json,application/json" onChange={handleFile} />
-						</label>
-					</div>
-
-					<div class="v2-roster-upload-or">— or paste —</div>
-
-					<Textarea
-						value={pasteText}
-						onInput={setPasteText}
-						placeholder="Paste the JSON array here…"
-						rows={6}
-					/>
-
-					<div class="v2-roster-upload-opts">
-						<Switch
-							checked={includeRentals}
-							onChange={setIncludeRentals}
-							label="Include rentals (borrowed)"
-						/>
-						<Switch
-							checked={includeStubs}
-							onChange={setIncludeStubs}
-							label="Include low-grade stubs"
-						/>
-					</div>
-
-					{parseError && <div class="v2-roster-upload-error">{parseError}</div>}
-				</div>
-
-				<div class="v2-roster-upload-actions">
-					<Button variant="secondary" onClick={() => setUploadOpen(false)}>Cancel</Button>
-					<Button
-						variant="primary"
-						disabled={pasteText.trim().length === 0}
-						onClick={() => doParse(pasteText)}
-					>
-						Load roster
-					</Button>
-				</div>
-			</Modal>
+				courseSurface={courseSurface}
+				onRosterParsed={onRosterParsed}
+			/>
 
 			<Modal
 				isOpen={detail != null}

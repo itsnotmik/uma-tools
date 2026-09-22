@@ -59,18 +59,24 @@ import {
   Book,
   Calendar,
   Heart,
+  LayoutGrid,
+  Sparkles,
 } from "lucide-react";
 import { V2TrackSelect } from "./track-select";
 import { CompactConditions } from "./conditions";
-import { presets, DEFAULT_PRESET } from "./presets";
+import { presets, visiblePresets, DEFAULT_PRESET } from "./presets";
 import { V2UmaPanel, UmaState, defaultUmaState } from "./uma-panel";
 import { TraineesTab } from "./trainees-tab";
+import { UmasTab, UmasTabState, initialUmasTabState } from "./roster/umas-tab";
 import { V2ResultsPane, CompareResults, RaceSnapshot } from "./results-pane";
 import { VelocityOverlay } from "./velocity-overlay";
 import { TourProvider, TourOverlay } from "./tour";
 import { SkillChartPane } from "./skill-chart-pane";
 import { SkillChartDetail } from "./skill-chart-detail";
 import { StaCalcResults } from "./stacalc";
+import { RosterPane, RosterResult } from "./roster-pane";
+import { SparksPane } from "./sparks-pane";
+import { ParsedRosterHorse, RosterParseResult, resolveCourseAptitudes } from "./roster-parser";
 // import { PasswordGate } from "./PasswordGate";
 import { FeedbackDrawer } from "./feedback-drawer";
 import { SimulationSettings } from "./sim-settings";
@@ -229,6 +235,8 @@ function App() {
 
   // Preferences (persisted separately)
   const [darkMode, setDarkMode] = useState(savedPrefs.current.darkMode);
+  // Glassmorphic surfaces. Orthogonal to darkMode: composes with both modes and all 6 accents.
+  const [glassMode, setGlassMode] = useState(savedPrefs.current.glassMode);
   const [colorPalette, setColorPalette] = useState<ColorPalette>(
     savedPrefs.current.colorPalette,
   );
@@ -239,7 +247,7 @@ function App() {
 
   // Simulation settings
   const [samples, setSamples] = useState(savedSession.current?.samples ?? 500);
-  const [mode, setMode] = useState<"compare" | "skill" | "stamina">(
+  const [mode, setMode] = useState<"compare" | "skill" | "stamina" | "roster" | "sparks">(
     savedSession.current?.mode ?? "compare",
   );
   const [seed, setSeed] = useState(() =>
@@ -266,12 +274,16 @@ function App() {
     localStorage.setItem('umalator_v2_duelingRates', JSON.stringify(duelingRates));
   }, [duelingRates]);
   const [laneMovement, setLaneMovement] = useState(true);
+  // 'v2' = our engine, 'v1' = alpha123's vendored upstream engine (tools/sync-upstream-engine.mjs)
+  const [engine, setEngine] = useState<'v1' | 'v2'>('v2');
   const [autoSeed, setAutoSeed] = useState(false);
   const [forceFullSpurt, setForceFullSpurt] = useState(true);
 
   // Panel visibility
   const [umaDrawerOpen, setUmaDrawerOpen] = useState(false);
-  const [activeUmaTab, setActiveUmaTab] = useState<1 | 2 | "trainees">(1);
+  const [activeUmaTab, setActiveUmaTab] = useState<1 | 2 | "trainees" | "umas">(1);
+  // Lifted so the roster/filters/sort survive the tab unmount that Load triggers.
+  const [umasState, setUmasState] = useState<UmasTabState>(initialUmasTabState);
   const [summaryDrawerOpen, setSummaryDrawerOpen] = useState(false);
   const [feedbackDrawerOpen, setFeedbackDrawerOpen] = useState(false);
 
@@ -293,6 +305,12 @@ function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [results, setResults] = useState<CompareResults | null>(null);
   const [hpcalcResults, setHpcalcResults] = useState<any>(null);
+
+  // Roster mode results
+  const [rosterHorses, setRosterHorses] = useState<ParsedRosterHorse[]>([]);
+  const [rosterResults, setRosterResults] = useState<RosterResult[]>([]);
+  const [rosterSamples, setRosterSamples] = useState(200);
+  const [rosterProgress, setRosterProgress] = useState<{ done: number; total: number } | null>(null);
 
   // Skill chart results
   const [skillChartResults, setSkillChartResults] = useState<Map<string, any>>(
@@ -324,7 +342,7 @@ function App() {
       type: "module",
     });
     w.addEventListener("message", (e: MessageEvent) => {
-      const { type, results: workerResults } = e.data;
+      const { type, results: workerResults, done, total } = e.data;
       switch (type) {
         case "compare":
           setResults(workerResults);
@@ -337,6 +355,16 @@ function App() {
           break;
         case "hpcalc-complete":
           setIsRunning(false);
+          break;
+        case "roster-progress":
+          setRosterProgress({ done, total });
+          break;
+        case "roster":
+          setRosterResults(workerResults);
+          break;
+        case "roster-complete":
+          setIsRunning(false);
+          setRosterProgress(null);
           break;
       }
     });
@@ -471,8 +499,8 @@ function App() {
 
   // Save preferences immediately
   useEffect(() => {
-    savePreferences({ darkMode, colorPalette, uiScale });
-  }, [darkMode, colorPalette, uiScale]);
+    savePreferences({ darkMode, glassMode, colorPalette, uiScale });
+  }, [darkMode, glassMode, colorPalette, uiScale]);
 
   useEffect(() => {
 	localStorage.setItem('umalator_v2_hideNotInGame', String(hideNotInGame));
@@ -548,6 +576,12 @@ function App() {
           setSamples(state.samples);
           setUma1(state.uma1);
           setUma2(state.uma2);
+          // Restore hint levels (older links omit this → empty map = all zero).
+          setSkillHints(
+            state.skillHints
+              ? new Map(Object.entries(state.skillHints))
+              : new Map(),
+          );
           setSelectedPresetId(null);
         }
       }
@@ -779,6 +813,8 @@ function App() {
 
   // Run simulation via worker
   const handleRunSimulation = useCallback(() => {
+    // Sparks mode is a pure data viewer — nothing to simulate.
+    if (mode === "sparks") return;
     if (autoSeed) {
       setSeed(Math.floor(Math.random() * 0xFFFFFFFF));
     }
@@ -812,6 +848,7 @@ function App() {
             competeFight,
             duelingRates: competeFight ? duelingRates : undefined,
             laneMovement,
+            engine,
           }),
         },
       });
@@ -844,9 +881,50 @@ function App() {
               competeFight,
               duelingRates: competeFight ? duelingRates : undefined,
               laneMovement,
+              engine,
             }),
             forceFullSpurt,
           },
+        },
+      });
+    } else if (mode === "roster") {
+      const course = courseData[courseId];
+      if (!course) {
+        console.error("[V2] Course not found:", courseId);
+        return;
+      }
+      if (rosterHorses.length === 0) {
+        console.warn("[V2] No roster loaded");
+        return;
+      }
+      setIsRunning(true);
+      setRosterResults([]);
+      setRosterProgress({ done: 0, total: rosterHorses.length });
+
+      worker.postMessage({
+        msg: "roster",
+        data: {
+          nsamples: rosterSamples,
+          course,
+          racedef: buildRaceParameters(ground, weather, season, time),
+          umas: rosterHorses.map((h) => {
+            const { distanceAptitude, surfaceAptitude } = resolveCourseAptitudes(
+              h,
+              (course as any).distanceType,
+              (course as any).surface,
+            );
+            return convertUmaStateForWorker({ ...h.uma, distanceAptitude, surfaceAptitude });
+          }),
+          options: buildSimulationOptions({
+            seed,
+            syncRng,
+            skillWisdomCheck,
+            rushedKakari,
+            leadCompetition,
+            competeFight,
+            duelingRates: competeFight ? duelingRates : undefined,
+            laneMovement,
+          }),
         },
       });
     } else {
@@ -872,9 +950,42 @@ function App() {
     competeFight,
     duelingRates,
     laneMovement,
+    engine,
     autoSeed,
     handleRunSkillChart,
+    rosterHorses,
+    rosterSamples,
   ]);
+
+  // Roster mode: parse uploaded export, and load a horse into Uma 1 for deep-dive
+  const handleRosterParsed = useCallback((parsed: RosterParseResult) => {
+    setRosterHorses(parsed.horses);
+    setRosterResults([]);
+    setRosterProgress(null);
+  }, []);
+
+  const handleSelectRosterHorse = useCallback((uma: UmaState, slot: 1 | 2 = 1) => {
+    if (slot === 2) {
+      setUma2(uma);
+      setActiveUmaTab(2);
+    } else {
+      setUma1(uma);
+      setActiveUmaTab(1);
+    }
+    setMode("compare");
+  }, []);
+
+  // Course surface (1=Turf, 2=Dirt) for roster aptitude selection
+  const courseSurface = useMemo(() => {
+    const c = (courseData as any)[courseId];
+    return (c?.surface === 2 ? 2 : 1) as 1 | 2;
+  }, [courseId]);
+
+  // Course distanceType (1=Sprint, 2=Mile, 3=Mid, 4=Long) for roster distance aptitude
+  const courseDistanceType = useMemo(() => {
+    const c = (courseData as any)[courseId];
+    return (c?.distanceType ?? 3) as number;
+  }, [courseId]);
 
   // Get current snapshot based on displayRun selection
   const currentSnapshot = useMemo(() => {
@@ -1217,7 +1328,7 @@ function App() {
         <IntlProvider definition={STRINGS}>
           <div
             id="app-v2"
-            class={`${darkMode ? "" : "light"} ${CC_DEV && yandereMode ? "yandere" : (colorPalette !== 'uma-green' ? colorPalette : '')} ${showNotification ? "v2-has-notification" : ""}`}
+            class={`${darkMode ? "" : "light"} ${glassMode ? "glass" : ""} ${CC_DEV && yandereMode ? "yandere" : (colorPalette !== 'uma-green' ? colorPalette : '')} ${showNotification ? "v2-has-notification" : ""}`}
             style={{ "--ui-scale": uiScale / 100 } as any}
           >
             {showNotification && (
@@ -1234,7 +1345,19 @@ function App() {
                   onChange={(val) => handlePresetSelect(val as number | null)}
                   options={[
                     { value: null, label: "Custom" },
-                    ...presets.map((p) => ({
+                    // Dropdown is windowed to the current CM ± 5; any other CM
+                    // is still loadable via ?preset=. If the active selection is
+                    // outside the window (e.g. loaded from a URL), surface it too.
+                    ...(selectedPresetId != null &&
+                    !visiblePresets.some((p) => p.id === selectedPresetId)
+                      ? presets
+                          .filter((p) => p.id === selectedPresetId)
+                          .map((p) => ({
+                            value: p.id,
+                            label: `CM ${p.id} - ${p.name}`,
+                          }))
+                      : []),
+                    ...visiblePresets.map((p) => ({
                       value: p.id,
                       label: `CM ${p.id} - ${p.name}`,
                     })),
@@ -1301,13 +1424,29 @@ function App() {
                     <Heart size={14} />
                     Stamina
                   </button>
+                  <button
+                    type="button"
+                    class={mode === "roster" ? "active" : ""}
+                    onClick={() => setMode("roster")}
+                  >
+                    <Users size={14} />
+                    Roster
+                  </button>
+                  <button
+                    type="button"
+                    class={mode === "sparks" ? "active" : ""}
+                    onClick={() => setMode("sparks")}
+                  >
+                    <Sparkles size={14} />
+                    Sparks
+                  </button>
                 </div>
                 <Button
                   variant="primary"
                   className="v2-run-btn"
                   icon={<Play size={14} />}
                   onClick={handleRunSimulation}
-                  disabled={isRunning}
+                  disabled={isRunning || (mode === "roster" && rosterHorses.length === 0) || mode === "sparks"}
                 >
                   {isRunning ? "Running..." : "RUN"}
                 </Button>
@@ -1343,6 +1482,19 @@ function App() {
                             }}
                           >
                             Light
+                          </button>
+                          {/* Glass is a separate axis, not a third mode: it layers on top of
+                              whichever of Dark/Light is active, and on any accent. */}
+                          <button
+                            type="button"
+                            class={`v2-theme-btn v2-theme-btn-glass ${glassMode ? 'active' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setGlassMode(!glassMode);
+                            }}
+                            title="Glassmorphic surfaces (works with Dark or Light)"
+                          >
+                            Glass
                           </button>
                         </div>
                       ),
@@ -1414,6 +1566,10 @@ function App() {
                           samples,
                           uma1,
                           uma2,
+                          // Only persist non-zero hint levels to keep the link compact.
+                          skillHints: Object.fromEntries(
+                            [...skillHints].filter(([, v]) => v > 0),
+                          ),
                         });
                       },
                     },
@@ -1488,6 +1644,8 @@ function App() {
               duelingRates={duelingRates}
               setDuelingRates={setDuelingRates}
               laneMovement={laneMovement}
+              engine={engine}
+              setEngine={setEngine}
               setLaneMovement={setLaneMovement}
               autoSeed={autoSeed}
               setAutoSeed={setAutoSeed}
@@ -1753,6 +1911,29 @@ function App() {
                       </div>
                     )}
                   </div>
+                ) : mode === "roster" ? (
+                  /* RESULTS - Roster ranking mode */
+                  <RosterPane
+                    horses={rosterHorses}
+                    results={rosterResults}
+                    courseSurface={courseSurface}
+                    courseDistanceType={courseDistanceType}
+                    isRunning={isRunning}
+                    progress={rosterProgress}
+                    samples={rosterSamples}
+                    setSamples={setRosterSamples}
+                    onRosterParsed={handleRosterParsed}
+                    onSelectHorse={handleSelectRosterHorse}
+                  />
+                ) : mode === "sparks" ? (
+                  /* RESULTS - Sparks (factor) viewer mode */
+                  <SparksPane
+                    horses={rosterHorses}
+                    courseSurface={courseSurface}
+                    courseDistanceType={courseDistanceType}
+                    onRosterParsed={handleRosterParsed}
+                    onSelectHorse={handleSelectRosterHorse}
+                  />
                 ) : mode === "stamina" ? (
                   /* RESULTS - Stamina calculator mode */
                   <div class="v2-results-pane">
@@ -1866,6 +2047,14 @@ function App() {
                     <Users size={14} />
                     Saved
                   </button>
+                  <button
+                    type="button"
+                    class={`v2-uma-tab-umas ${activeUmaTab === "umas" ? "active" : ""}`}
+                    onClick={() => setActiveUmaTab("umas")}
+                  >
+                    <LayoutGrid size={14} />
+                    Umas
+                  </button>
                 </div>
 
                 <div class="v2-drawer-content">
@@ -1912,6 +2101,16 @@ function App() {
                       currentMode={mode}
                       currentUma1={uma1}
                       currentUma2={uma2}
+                    />
+                  )}
+                  {activeUmaTab === "umas" && (
+                    <UmasTab
+                      state={umasState}
+                      onStateChange={setUmasState}
+                      onLoadToUma1={(s) => { handleUma1Load(s); setActiveUmaTab(1); }}
+                      onLoadToUma2={(s) => { handleUma2Load(s); setActiveUmaTab(2); }}
+                      currentMode={mode}
+                      course={courseData[courseId]}
                     />
                   )}
                 </div>
@@ -2134,6 +2333,7 @@ function App() {
               onRun={handleRunSimulation}
               isRunning={isRunning}
               hasResults={!!results}
+              runDisabled={mode === "sparks" || (mode === "roster" && rosterHorses.length === 0)}
             />
 
             {/* Mobile settings panel */}
@@ -2197,6 +2397,22 @@ function App() {
                           <Heart size={14} />
                           Stamina
                         </button>
+                        <button
+                          type="button"
+                          class={mode === "roster" ? "active" : ""}
+                          onClick={() => setMode("roster")}
+                        >
+                          <Users size={14} />
+                          Roster
+                        </button>
+                        <button
+                          type="button"
+                          class={mode === "sparks" ? "active" : ""}
+                          onClick={() => setMode("sparks")}
+                        >
+                          <Sparkles size={14} />
+                          Sparks
+                        </button>
                       </div>
                     </div>
                     <div class="v2-mobile-settings-section">
@@ -2244,6 +2460,8 @@ function App() {
                         duelingRates={duelingRates}
                         setDuelingRates={setDuelingRates}
                         laneMovement={laneMovement}
+                        engine={engine}
+                        setEngine={setEngine}
                         setLaneMovement={setLaneMovement}
                         autoSeed={autoSeed}
                         setAutoSeed={setAutoSeed}
@@ -2261,6 +2479,17 @@ function App() {
                             type="checkbox"
                             checked={darkMode}
                             onChange={() => setDarkMode(!darkMode)}
+                          />
+                          <span class="v2-switch-slider" />
+                        </label>
+                      </div>
+                      <div class="v2-mobile-settings-row">
+                        <label>Glass</label>
+                        <label class="v2-switch">
+                          <input
+                            type="checkbox"
+                            checked={glassMode}
+                            onChange={() => setGlassMode(!glassMode)}
                           />
                           <span class="v2-switch-slider" />
                         </label>

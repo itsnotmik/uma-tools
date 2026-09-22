@@ -288,6 +288,58 @@ v2/
 - Review screen allows editing before loading
 - API key stored in localStorage (optional)
 
+### OCR Pipeline (screenshot → uma)
+
+Imports a uma from a game screenshot via Google Gemini. Three consumers share the
+flow across two environments:
+
+| Consumer | File | Env | Auth |
+|---|---|---|---|
+| v2 + v1 web modals | `components/GeminiOCR.ts` (shared lib) | Browser | Proxy (no key) → user-key fallback |
+| OCR proxy | `uma-tools-worker/webhook-proxy.js` | Cloudflare Worker | Server `GEMINI_API_KEY` secret |
+| Discord bot | `uma-tools-bot/src/gemini-ocr.ts` | Node | Server key |
+
+**SDK + model:** uses the unified **`@google/genai`** SDK against **`gemini-3.5-flash`**
+— a GA model with a **free tier** (vision + structured output). Do **not** use
+`gemini-flash-latest` (floating alias, no guaranteed free tier). **Model retirements
+break OCR with a 404 `NOT_FOUND` "no longer available to new users"** — `gemini-2.0-flash*`
+shut down 2026-06-01, and `gemini-2.5-flash` was retired for new users ~2026-06 (that's why
+we moved to 3.5-flash on 2026-07-23). Prefer a stable free-tier **Flash** model; avoid the
+bleeding-edge one until its free tier is confirmed. The model is a `MODEL` constant in
+`components/GeminiOCR.ts` and `uma-tools-bot/src/gemini-ocr.ts` (2 places); the worker is
+model-agnostic.
+
+**Structured output:** the call sets `responseMimeType: 'application/json'` +
+`responseSchema` (the `OCRHorseData` shape, with `enum`s for aptitude/strategy), so
+Gemini returns guaranteed-valid JSON — no markdown-fence stripping needed. The strategy
+enum is the four on-screen styles (Nige/Senkou/Sasi/Oikomi); Oonige isn't screenshot-
+derivable, so the user sets it manually after import if needed.
+
+**Proxy:** the browser points the SDK at the worker via
+`httpOptions.baseUrl = OCR_PROXY_URL + '/gemini'`. The worker's `/gemini/*` route is a
+transparent reverse proxy: it forwards `/v1beta/models/<model>:generateContent` to
+Google, injecting `env.GEMINI_API_KEY` as `x-goog-api-key` (only inference paths are
+allowed; any client-sent key is ignored). Most users never need a key; if the proxy
+fails, the client falls back to a user-supplied key (entered in the modal, optionally
+saved to `localStorage`). `OCR_PROXY_URL` is provided to the build via the
+`CC_OCR_PROXY` esbuild/vite define (from `OCR_PROXY_URL` in `.env.local`). After
+deploying the worker, set the secret with `wrangler secret put GEMINI_API_KEY`.
+
+**Abuse protection:** the `/gemini` proxy is gated so only the real apps can spend the
+server key. The worker enforces (1) an **Origin allowlist** (`umalator.app`,
+`dev.umalator.app`, `localhost`) and (2) a **Cloudflare Turnstile** token — the browser
+gets a single-use token from `components/turnstile.ts` (a hidden Managed-mode widget) and
+sends it as the `X-Turnstile-Token` header; the worker verifies it via Turnstile
+`siteverify` before proxying. No token / failed check → `403` → the client's user-key
+fallback. Setup: create a Turnstile widget in the Cloudflare dashboard, put its **sitekey**
+in the Pages build env `TURNSTILE_SITEKEY` (public; baked in via `CC_TURNSTILE_SITEKEY`)
+and its **secret** in the worker via `wrangler secret put TURNSTILE_SECRET`. The worker
+fails closed (`503`) until `TURNSTILE_SECRET` is set. Local dev: Cloudflare's always-pass
+test pair (sitekey `1x00000000000000000000AA`, secret `1x0000000000000000000000000000000AA`).
+
+**To change the model:** edit the `MODEL` constant in the two files above (and confirm
+the new model has a free tier if you rely on the proxy).
+
 ### URL State Features (V2)
 
 **Hash-based State Serialization:**
@@ -349,12 +401,47 @@ cd umalator-global
 update.bat [path-to-master.mdb]
 
 # Linux/Mac
-perl make_global_skill_data.pl /path/to/master.mdb > skill_data.json
 perl make_global_skillnames.pl /path/to/master.mdb > skillnames.json
 perl make_global_course_data.pl /path/to/master.mdb courseeventparams > course_data.json
 ```
 
 Requires Perl with `DBI` and `DBD::SQLite` modules.
+
+⚠️ **There is no `make_global_skill_data.pl`** — it does not exist in this repo or upstream.
+The JP `uma-skill-tools/tools/make_skill_data.pl` does run against the Global mdb, but it
+predates the current schema: it emits only `modifier`/`target`/`type` per effect, so its
+output **drops `scaling`** (which `RaceSolverBuilder.ts` reads), plus `wisdomCheck` and
+`tags`. Don't regenerate `skill_data.json` with it. See "Keeping skill_data.json in sync"
+below.
+
+### Keeping skill_data.json in sync
+
+`umalator-global/skill_data.json` is a **JP superset** (~1530 entries): ~680 skills live on
+Global, plus ~850 fast-forwarded from JP. Two rules follow from that:
+
+1. **Never *replace* it wholesale from the Global mdb** — that wipes the fast-forwarded JP
+   entries, which are the point of the superset.
+2. **But it does need periodic *merging*.** For skills already live on Global, `master.mdb`
+   is authoritative, and Cygames rebalances them. `tools/fast-forward-global.ts` only ever
+   ADDS entries (see its `existingIds` guard), so it can never refresh a skill it already
+   imported. Left alone, live-skill definitions freeze at whatever they were on first import.
+
+   This is not hypothetical: by 2026-07-30, **79 Global-live skills** had conditions that
+   disagreed with `master.mdb` — e.g. `100051` Lights of Vaudeville still carried the JP
+   definition (`is_finalcorner==1&corner==0&order_rate<=30&behind_near_lane_time_set1>=1`)
+   where Global is simply `remain_distance<=300`.
+
+**The correct operation is a merge:** take the current definition for every skill live in
+`docs/master.mdb`; leave every JP-only entry untouched. Two things to preserve when doing it:
+
+- `make_skill_data.pl`'s `patch_modifier()` deliberately multiplies ~23 scenario-skill IDs
+  (`210011`…`210291`) by **1.2**. Re-apply it, or those magnitudes silently drop ~17%.
+- Match the file's existing format — tab indent, original top-level key order — or the diff
+  becomes unreviewable whitespace churn.
+
+`fast-forward-global.ts` now **detects and reports this drift** on every run
+(`⚠️ [STALE DATA] N Global-live skill(s) no longer match master.mdb`). It cannot fix it —
+that warning is your cue to re-run the merge.
 
 ### Updating Global master.mdb
 
@@ -741,24 +828,32 @@ Community guides are Canva embeds addressed by a numbered slug, reachable at bot
   highest-numbered (newest) guide
 - number-only (`/14`) → 302 to the full slug
 
-**Routing + registry live in `functions/[[catchall]].ts`** (a Pages Function),
-NOT `_redirects` — Cloudflare Pages `_redirects` matches on the request path only,
-so hostname-scoped rules there are silently ignored. The function renders each
-guide page from the `EMBEDS` array.
+**Registry lives in `canva-embeds.json`** (single source of truth, repo root).
 
-**To add a guide:** add one entry to the `EMBEDS` array near the top of
-`functions/[[catchall]].ts`:
+**`umalator.app/canva/<slug>` is served by STATIC pages**, not the Function. Cloudflare
+Pages Functions are not currently executing on the production project (the
+`functions/[[catchall]].ts` canva routing — and the events OG function, and the
+`www`→apex redirect — never run in prod; everything falls through to static). So
+`tools/gen-canva-static.mjs` reads `canva-embeds.json` and writes static
+`canva/<slug>/index.html` wrapper pages (+ `canva/index.html` = newest) on every build
+(wired into `build-all.sh`). These are plain static assets and always serve. The
+`functions/[[catchall]].ts` still reads the same `canva-embeds.json` and would serve the
+`canva.umalator.app` subdomain (and number-only slugs) **if/when Functions are revived**
+— that requires a Cloudflare dashboard fix (Functions enablement / compatibility date),
+not a repo change. The subdomain + number-slug `/14`→`/14-yasuda` redirects are currently
+inactive in prod as a result.
 
-```ts
-{ slug: '15-takarazuka', title: 'CM 15 Guide — Takarazuka Kinen',
-  canvaId: 'XXXX', viewToken: 'YYYY' },
+**To add a guide:** add one entry to `canva-embeds.json`:
+
+```json
+{ "slug": "16-sprinters", "title": "CM 16 Guide — Sprinters",
+  "canvaId": "XXXX", "viewToken": "YYYY" }
 ```
 
 Get `canvaId` + `viewToken` from Canva › Share › More › Embed — the embed URL is
-`https://www.canva.com/design/<canvaId>/<viewToken>/view?embed`. The newest entry
-automatically becomes the root redirect target. Changes ship with `master`
-(`canva.umalator.app` maps to the production deployment), so merge `dev` → master
-to publish.
+`https://www.canva.com/design/<canvaId>/<viewToken>/view?embed`. The highest-numbered
+entry automatically becomes `canva/index.html` (the bare-`/canva` target). Changes ship
+with `master` — merge `dev` → master to publish.
 
 ## Credits
 

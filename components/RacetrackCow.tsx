@@ -23,6 +23,11 @@ export interface RacetrackCowProps {
 }
 
 const COW_SKIN: string = typeof CC_COW_SKIN !== 'undefined' ? CC_COW_SKIN : '';
+
+// Skins are single static images by default (falcow). Skins listed here instead ship one
+// image per cow state and swap with it, e.g. golshi_walk.png / golshi_idle.png /
+// golshi_sleep.png. Registered explicitly because the browser can't probe for the files.
+const MULTI_STATE_SKINS = new Set(['golshi']);
 const COW_SIZE = 32; // Display size in pixels
 const WALK_SPEED = 0.02; // Pixels per ms
 const FRAME_INTERVAL = 150; // ms between animation frames
@@ -214,6 +219,9 @@ export function RacetrackCow({ trackWidth, onWalk, onStateChange, onClick, onDou
 	const flip = directionRef.current === 'right' ? 'scaleX(-1)' : '';
 
 	if (COW_SKIN) {
+		const skinSrc = MULTI_STATE_SKINS.has(COW_SKIN)
+			? `/uma-tools/icons/cow/${COW_SKIN}_${stateRef.current}.png`
+			: `/uma-tools/icons/cow/${COW_SKIN}.png`;
 		const wobble = stateRef.current === 'walk'
 			? `rotate(${Math.sin(renderTick * 0.12) * 6}deg)`
 			: stateRef.current === 'idle'
@@ -228,7 +236,7 @@ export function RacetrackCow({ trackWidth, onWalk, onStateChange, onClick, onDou
 						left: `${leftPercent}%`,
 						width: '64px',
 						height: '48px',
-						backgroundImage: `url('/uma-tools/icons/cow/${COW_SKIN}.png')`,
+						backgroundImage: `url('${skinSrc}')`,
 						backgroundSize: 'contain',
 						backgroundRepeat: 'no-repeat',
 						backgroundPosition: 'center',

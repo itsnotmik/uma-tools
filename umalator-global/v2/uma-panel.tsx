@@ -17,10 +17,12 @@ import {
 	loadHorseSlot,
 	deleteHorseSlot,
 	downloadHorseJson,
-	importHorseJson,
+	importHorseJsonMulti,
 	copyHorseToClipboard,
 	pasteHorseFromClipboard,
 } from './storage';
+import type { ImportCandidate } from './storage';
+import { ImportPickerModal } from './import-picker';
 import { ChevronRight, Save, Upload, Download, Copy, Clipboard, Trash2, RotateCcw, Camera, LayoutGrid, Columns2 } from 'lucide-react';
 import { OCRModal } from './ocr-modal';
 
@@ -29,7 +31,7 @@ import umas from '../umas.json';
 import icons from '../../icons.json';
 import skilldata from '../skill_data.json';
 import skillmeta from '../../skill_meta.json';
-import { skillGroups } from './skill-chart-utils';
+import { skillGroups, computeSkillSp } from './skill-chart-utils';
 import notInGame from '../not-in-game.json';
 
 // ============================================
@@ -78,6 +80,9 @@ export interface UmaState {
 	outfitId: string;
 	starCount: number;
 	uniqueLv: number;
+	/** Game rating (rank_score) of the trained uma this was loaded from, if it came from the
+	 *  Umas roster tab. Display-only: the sim ignores it. */
+	rosterRating?: number;
 	speed: number;
 	stamina: number;
 	power: number;
@@ -115,7 +120,7 @@ export const defaultUmaState: UmaState = {
 // STAT RANK CALCULATION
 // ============================================
 
-function rankForStat(x: number): number {
+export function rankForStat(x: number): number {
 	if (x > 1200) {
 		return Math.min(18 + Math.floor((x - 1200) / 100) * 10 + Math.floor(x / 10) % 10, 97);
 	} else if (x >= 1150) {
@@ -129,6 +134,29 @@ function rankForStat(x: number): number {
 	}
 }
 
+// Stat tiles, in display order, with their type-icon paths (shared by the uma panel
+// and the read-only roster detail modal so the two stay visually identical).
+export const STAT_ICONS: { key: 'speed' | 'stamina' | 'power' | 'guts' | 'wisdom'; label: string; icon: string }[] = [
+	{ key: 'speed', label: 'Spd', icon: '/uma-tools/icons/status_00.png' },
+	{ key: 'stamina', label: 'Sta', icon: '/uma-tools/icons/status_01.png' },
+	{ key: 'power', label: 'Pow', icon: '/uma-tools/icons/status_02.png' },
+	{ key: 'guts', label: 'Gut', icon: '/uma-tools/icons/status_03.png' },
+	{ key: 'wisdom', label: 'Wit', icon: '/uma-tools/icons/status_04.png' },
+];
+
+/** Rank icon (S/A/… colored badge) for a numeric stat value — mirrors StatInput. */
+export function statRankIconUrl(value: number): string {
+	const rank = rankForStat(value);
+	return `/uma-tools/icons/statusrank/ui_statusrank_${(100 + rank).toString().slice(1)}.png`;
+}
+
+/** Rank icon for an aptitude grade (S..G) — mirrors the panel's APTITUDE_OPTIONS. */
+export function aptitudeRankIconUrl(grade: string): string {
+	const order: string[] = ['S', 'A', 'B', 'C', 'D', 'E', 'F', 'G'];
+	const idx = 7 - order.indexOf(grade);
+	return `/uma-tools/icons/utx_ico_statusrank_${(100 + idx).toString().slice(1)}.png`;
+}
+
 // ============================================
 // UMA PORTRAIT / SELECTOR
 // ============================================
@@ -137,6 +165,7 @@ interface UmaPortraitProps {
 	outfitId: string;
 	onSelect: (outfitId: string) => void;
 	hideNotInGame?: boolean;
+	rosterRating?: number;
 }
 
 // Outfit values may be a string (epithet) or an object with an epithet property
@@ -155,7 +184,7 @@ function searchNames(query: string): string[] {
 	return umaAltIds.filter(oid => umaNamesForSearch[oid].indexOf(q) > -1);
 }
 
-export function UmaPortrait({ outfitId, onSelect, hideNotInGame = false }: UmaPortraitProps) {
+export function UmaPortrait({ outfitId, onSelect, hideNotInGame = false, rosterRating }: UmaPortraitProps) {
 	const [isSearchOpen, setIsSearchOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [activeIdx, setActiveIdx] = useState(-1);
@@ -234,6 +263,11 @@ export function UmaPortrait({ outfitId, onSelect, hideNotInGame = false }: UmaPo
 					<>
 						<span class="v2-uma-epithet">{outfitName(uma.outfits[outfitId])}</span>
 						<span class="v2-uma-name">{uma.name[1]}</span>
+						{rosterRating != null && (
+							<span class="v2-uma-rating" title="Rating of the trained uma this was loaded from (Umas tab)">
+								Rating {rosterRating}
+							</span>
+						)}
 					</>
 				) : (
 					<span class="v2-uma-placeholder">Click portrait to select</span>
@@ -301,8 +335,7 @@ interface StatInputProps {
 
 export function StatInput({ label, icon, value, onChange }: StatInputProps) {
 	const [draft, setDraft] = useState<string | null>(null);
-	const rank = rankForStat(value);
-	const rankIcon = `/uma-tools/icons/statusrank/ui_statusrank_${(100 + rank).toString().slice(1)}.png`;
+	const rankIcon = statRankIconUrl(value);
 
 	return (
 		<div class="v2-stat-input">
@@ -341,17 +374,9 @@ interface StatsGridProps {
 }
 
 export function StatsGrid({ state, onChange }: StatsGridProps) {
-	const stats = [
-		{ key: 'speed', label: 'Spd', icon: '/uma-tools/icons/status_00.png' },
-		{ key: 'stamina', label: 'Sta', icon: '/uma-tools/icons/status_01.png' },
-		{ key: 'power', label: 'Pow', icon: '/uma-tools/icons/status_02.png' },
-		{ key: 'guts', label: 'Gut', icon: '/uma-tools/icons/status_03.png' },
-		{ key: 'wisdom', label: 'Wit', icon: '/uma-tools/icons/status_04.png' },
-	] as const;
-
 	return (
 		<div class="v2-stats-grid">
-			{stats.map(s => (
+			{STAT_ICONS.map(s => (
 				<StatInput
 					key={s.key}
 					label={s.label}
@@ -445,6 +470,10 @@ const STRATEGIES: { value: Strategy; label: string }[] = [
 	{ value: 'Sasi', label: 'Late Surger' },
 	{ value: 'Oikomi', label: 'End Closer' },
 ];
+
+/** Display labels keyed by UmaState.strategy, derived so there's one source of truth. */
+export const STRATEGY_LABELS: Record<string, string> =
+	Object.fromEntries(STRATEGIES.map(s => [s.value, s.label]));
 
 interface StrategySelectProps {
 	value: Strategy;
@@ -560,6 +589,7 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 	const [saveModalName, setSaveModalName] = useState('');
 	const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 	const [deleteSlotName, setDeleteSlotName] = useState('');
+	const [pickerCandidates, setPickerCandidates] = useState<ImportCandidate[] | null>(null);
 
 	// Refresh saved slots list
 	const refreshSlots = useCallback(() => {
@@ -599,7 +629,8 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 			}
 		}
 
-		onChange({ outfitId, starCount, uniqueLv, skills: newSkills, forcedSkillPositions: newForcedPositions });
+		// onChange merges, so an old roster rating would stick to a different character.
+		onChange({ outfitId, starCount, uniqueLv, skills: newSkills, forcedSkillPositions: newForcedPositions, rosterRating: undefined });
 	}, [onChange, state.skills, state.forcedSkillPositions, state.starCount]);
 
 	// Save handlers
@@ -659,10 +690,16 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 	}, [onLoad]);
 
 	const handleImportJson = useCallback(async () => {
-		const imported = await importHorseJson();
-		if (imported && onLoad) {
-			onLoad(imported);
+		const { candidates, skipped } = await importHorseJsonMulti();
+		if (skipped.length > 0) {
+			alert(`Skipped ${skipped.length} file(s) that weren't valid uma JSON:\n${skipped.join('\n')}`);
 		}
+		if (candidates.length === 0) return;
+		if (candidates.length === 1) {
+			onLoad?.(candidates[0].data);
+			return;
+		}
+		setPickerCandidates(candidates);
 	}, [onLoad]);
 
 	const handlePasteFromClipboard = useCallback(async () => {
@@ -821,7 +858,7 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 			</div>
 
 			{/* Character portrait and selector */}
-			<UmaPortrait outfitId={state.outfitId} onSelect={handleOutfitSelect} hideNotInGame={hideNotInGame} />
+			<UmaPortrait outfitId={state.outfitId} onSelect={handleOutfitSelect} hideNotInGame={hideNotInGame} rosterRating={state.rosterRating} />
 
 			{/* Stats */}
 			<CollapsibleSection title="Stats" defaultOpen={true}>
@@ -834,40 +871,7 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 			</CollapsibleSection>
 
 			{/* Skills */}
-			<CollapsibleSection title="Skills" badge={(() => {
-				// Total SP = sum across each group of (chain cost up to the highest-selected skill).
-				// Mirrors in-game pricing: buying a gold ◎ also charges for the prerequisite ○/×.
-				const meta = skillmeta as Record<string, { baseCost?: number; groupId?: string }>;
-				const selectedByGroup = new Map<string, Set<string>>();
-				let total = 0;
-				for (const id of state.skills) {
-					const m = meta[id];
-					if (!m) continue;
-					const gid = m.groupId;
-					if (!gid) {
-						total += m.baseCost ?? 0;
-						continue;
-					}
-					if (!selectedByGroup.has(gid)) selectedByGroup.set(gid, new Set());
-					selectedByGroup.get(gid)!.add(id);
-				}
-				for (const [gid, selectedInGroup] of selectedByGroup) {
-					const sorted = skillGroups.get(gid);
-					if (!sorted) {
-						for (const id of selectedInGroup) total += meta[id]?.baseCost ?? 0;
-						continue;
-					}
-					let maxPos = -1;
-					for (let i = 0; i < sorted.length; i++) {
-						if (selectedInGroup.has(sorted[i])) maxPos = i;
-					}
-					if (maxPos < 0) continue;
-					for (let i = 0; i <= maxPos; i++) {
-						total += meta[sorted[i]]?.baseCost ?? 0;
-					}
-				}
-				return `${state.skills.length} · ${total.toLocaleString()} SP`;
-			})()} defaultOpen={true} headerAction={
+			<CollapsibleSection title="Skills" badge={`${state.skills.length} · ${computeSkillSp(state.skills).toLocaleString()} SP`} defaultOpen={true} headerAction={
 				<span
 					class="v2-collapsible-layout-toggle"
 					title={wideSkills ? 'Wide layout (2 columns)' : 'Compact layout (3 columns)'}
@@ -906,6 +910,15 @@ export function V2UmaPanel({ state, onChange, onLoad, onReset, onResetAll, title
 				onClose={() => setIsOCRModalOpen(false)}
 				onConfirm={handleOCRConfirm}
 			/>
+
+			{/* Import picker (multi-file) */}
+			{pickerCandidates && (
+				<ImportPickerModal
+					candidates={pickerCandidates}
+					onPick={(data) => { onLoad?.(data); setPickerCandidates(null); }}
+					onClose={() => setPickerCandidates(null)}
+				/>
+			)}
 
 			{/* Save Modal */}
 			<Modal

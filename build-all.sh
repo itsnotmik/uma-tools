@@ -8,6 +8,10 @@ echo "Building uma-tools applications..."
 echo "========================================="
 
 echo ""
+echo "Generating static Canva guide pages (canva/<slug>/index.html)..."
+node tools/gen-canva-static.mjs
+
+echo ""
 echo "Building umalator-global..."
 cd umalator-global
 node build.mjs
@@ -27,11 +31,12 @@ cp umalator-global/v2/dist/simulator.worker.js ./simulator.worker.js 2>/dev/null
 rm -rf assets
 cp -r umalator-global/v2/dist/assets ./assets
 
-echo ""
-echo "Building umalator (JP)..."
-cd umalator
-node build.mjs
-cd ..
+# NOTE: the JP v1 app (umalator/app.tsx + its build.mjs) was retired on 2026-08-27;
+# /umalator and /umalator-global now 301 to the v2 root via _redirects. umalator/ still
+# holds shared sim glue (compare.ts, hpcalc.ts, BasinnChart.tsx) that v2 imports, but
+# there is nothing to build there. Leaving the old `cd umalator && node build.mjs` here
+# broke every Pages build for a week: set -e aborted the script at that step, so the
+# deploy failed and the site kept serving pre-merge assets.
 
 echo ""
 echo "Building skill-visualizer (JP) → /skill-visualizer-jp/..."

@@ -31,29 +31,27 @@ const skillids = Object.freeze(Object.keys(skills).filter(id => {
 }));
 
 export function CourseId() {
-	return fc.constantFrom(...courseids).noBias().noShrink();
+	return fc.noShrink(fc.noBias(fc.constantFrom(...courseids)));
 }
 
 export function Mood() {
-	return fc.constantFrom<rparams.Mood>(-2, -1, 0, 1, 2).noBias();
+	return fc.noBias(fc.constantFrom<rparams.Mood>(-2, -1, 0, 1, 2));
 }
 
 export function GroundCondition() {
-	return fc.constantFrom(rparams.GroundCondition.Good, rparams.GroundCondition.Yielding, rparams.GroundCondition.Soft, rparams.GroundCondition.Heavy)
-	         .noBias();
+	return fc.noBias(fc.constantFrom(rparams.GroundCondition.Good, rparams.GroundCondition.Yielding, rparams.GroundCondition.Soft, rparams.GroundCondition.Heavy));
 }
 
 export function Weather() {
-	return fc.constantFrom(rparams.Weather.Sunny, rparams.Weather.Cloudy, rparams.Weather.Rainy, rparams.Weather.Snowy).noBias();
+	return fc.noBias(fc.constantFrom(rparams.Weather.Sunny, rparams.Weather.Cloudy, rparams.Weather.Rainy, rparams.Weather.Snowy));
 }
 
 export function Season() {
-	return fc.constantFrom(rparams.Season.Spring, rparams.Season.Summer, rparams.Season.Autumn, rparams.Season.Winter, rparams.Season.Sakura)
-	         .noBias();
+	return fc.noBias(fc.constantFrom(rparams.Season.Spring, rparams.Season.Summer, rparams.Season.Autumn, rparams.Season.Winter, rparams.Season.Sakura));
 }
 
 export function Time() {
-	return fc.constantFrom(rparams.Time.Morning, rparams.Time.Midday, rparams.Time.Evening, rparams.Time.Night).noBias();
+	return fc.noBias(fc.constantFrom(rparams.Time.Morning, rparams.Time.Midday, rparams.Time.Evening, rparams.Time.Night));
 }
 
 export function Stat() {
@@ -61,11 +59,11 @@ export function Stat() {
 }
 
 export function Strategy() {
-	return fc.constantFrom('Nige', 'Senkou', 'Sasi', 'Oikomi', 'Oonige').noBias();
+	return fc.noBias(fc.constantFrom('Nige', 'Senkou', 'Sasi', 'Oikomi', 'Oonige'));
 }
 
 export function Aptitude() {
-	return fc.constantFrom('S', 'A', 'B', 'C', 'D', 'E', 'F', 'G').noBias();
+	return fc.noBias(fc.constantFrom('S', 'A', 'B', 'C', 'D', 'E', 'F', 'G'));
 }
 
 export function HorseDesc() {
@@ -84,7 +82,7 @@ export function HorseDesc() {
 }
 
 export function SkillList(max: number = 30) {
-	return fc.array(fc.constantFrom(...skillids).noBias(), {maxLength: max});
+	return fc.array(fc.noBias(fc.constantFrom(...skillids)), {maxLength: max});
 }
 
 export interface RaceParams {
@@ -109,7 +107,7 @@ export interface RaceParams {
 
 export function Race({maxSamples = 200, maxPreSkills = 30, maxSut = 30}: {maxSamples?: number, maxPreSkills?: number, maxSut?: number} = {}) {
 	return fc.record({
-		seed: fc.integer().noBias().noShrink(),
+		seed: fc.noShrink(fc.noBias(fc.integer())),
 		horse: HorseDesc(),
 		courseId: CourseId(),
 		mood: Mood(),
